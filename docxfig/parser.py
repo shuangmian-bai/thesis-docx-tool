@@ -21,6 +21,7 @@ DSL 格式（每个图一个 .md 文件）：
 - color: 语义色名（blue/orange/green/grey/purple/red/white），留空用默认
 - text: 显示文本，\\n 表示换行
 - extra: 可选属性，用 key:value 逗号分隔，如 label:xxx, dashed:true, radius:0, font:tiny
+         值中的 \\n 会被转成换行
 """
 import os
 import re
@@ -42,7 +43,7 @@ def _parse_extra(s):
         if not part or ":" not in part:
             continue
         k, v = part.split(":", 1)
-        out[k.strip()] = v.strip()
+        out[k.strip()] = v.strip().replace("\\n", "\n")
     return out
 
 

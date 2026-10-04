@@ -56,13 +56,43 @@ def _draw_element(d, el):
     elif t == "arrow":
         aw = int(ex["width"]) if "width" in ex else 4
         ah = int(ex["head"]) if "head" in ex else 16
-        R.arrow(d, x, y, w, h, label=ex.get("label") or None,
+        # label 优先取 extra；误写在 text 列时兜底（_validate 会同时给出提示）
+        label = ex.get("label") or text or None
+        R.arrow(d, x, y, w, h, label=label,
                 color=color, width=aw, head=ah,
                 dashed=ex.get("dashed", "").lower() == "true")
     elif t == "line":
         R.line(d, x, y, w, h, color=color)
     elif t == "text":
         R.text(d, x, y, text, font=font, color=color)
+
+
+def _validate(fig_name, canvas_h, elements):
+    """静态校验图定义，把容易静默出错的写法直接报出来。"""
+    warns = 0
+    for i, el in enumerate(elements, 1):
+        t, text, ex = el["type"], el["text"], el["extra"]
+        # 只有 box/diamond/text 能显示 text 列；arrow 的文字走 label:，line 无文字
+        if text:
+            if t == "arrow" and not ex.get("label"):
+                print(f"  [注意] {fig_name} 第{i}行：arrow 的文字应写在 extra 列"
+                      f"（label:{text}），已按 label 兜底处理")
+                warns += 1
+            elif t == "line":
+                print(f"  [注意] {fig_name} 第{i}行：line 不支持文字，"
+                      f"text 列内容（{text[:10]}）不会绘制")
+                warns += 1
+        x, y = el["pos"]; w, h = el["size"]
+        if t in ("box", "container", "diamond"):
+            x2, y2 = x + w, y + h
+        else:  # arrow / line 的 size 是终点坐标；text 无尺寸
+            x2, y2 = w, h
+        if min(x, x2) < 0 or min(y, y2) < 0 \
+                or max(x, x2) > R.CANVAS_W or max(y, y2) > canvas_h:
+            print(f"  [注意] {fig_name} 第{i}行：元素超出画布范围"
+                  f"（canvas {R.CANVAS_W}x{canvas_h}）")
+            warns += 1
+    return warns
 
 
 def generate(name=None):
@@ -76,6 +106,7 @@ def generate(name=None):
     print(f"生成架构图 → {os.path.relpath(OUT_DIR, HERE)}")
     for fig_name, md_path in figures:
         canvas_h, elements = parse(md_path)
+        _validate(fig_name, canvas_h, elements)
         im, d = R.new_canvas(canvas_h)
         for el in elements:
             _draw_element(d, el)

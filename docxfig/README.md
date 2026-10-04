@@ -50,8 +50,11 @@ canvas: 1350 1280
 | `fill` | box | 单独覆盖填充色（语义色名），如 `fill:white` |
 | `line` | box | 单独覆盖边框色（语义色名），如 `line:orange` |
 | `dashed` | arrow | `true` 画虚线箭头 |
-| `label` | arrow | 箭头中点文字 |
+| `label` | arrow | 箭头中点文字（支持 `\n` 换行） |
 | `width` / `head` | arrow | 线宽 / 箭头大小（默认 4 / 16） |
+
+> arrow 的文字只能通过 `label:` 给出，写在 `text` 列会被生成器报 `[注意]`
+> （并按 label 兜底渲染）；`line` 不支持文字。生成器还会校验元素是否超出画布。
 
 ### 元素类型说明
 
