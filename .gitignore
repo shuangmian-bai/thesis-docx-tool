@@ -38,3 +38,4 @@ Thumbs.db
 .debug_*.xml
 .toc_pass*.json
 .toc_prev.json
+/CLAUDE.md
