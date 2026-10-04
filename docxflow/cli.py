@@ -182,8 +182,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.docx:
         _step("阶段 · 拆解用户 Word 为章节 Markdown")
+        # rel_base 传 config/：图片引用写成 images/<名>_images/x.png，
+        # 与 build 以 config/ 为基准的图片解析、手写章节的引用约定保持一致
         convert_to(args.docx, md_target, images_dir,
-                   strip_front=not args.keep_front)
+                   strip_front=not args.keep_front, rel_base=CONFIG_DIR)
 
     _step("阶段 · 架构图渲染")
     _fig_stage(args.no_fig)

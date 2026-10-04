@@ -40,8 +40,10 @@ from docxconvert.cli import main, convert_to
 # 命令行入口（产物默认落 output/）
 main(["用户论文.docx", "--strip-front"])   # 等价于 python3 main.py convert 用户论文.docx --strip-front
 # 指定落点的核心函数（docxflow 用它把拆解产物直接落 config/章节/ 与 config/images/）
+# rel_base 必须传 config/：引用写成 images/...，与 build 以 config/ 为基准的解析对齐
 convert_to("用户论文.docx", "config/章节/用户论文.md",
-           "config/images/用户论文_images", strip_front=True)
+           "config/images/用户论文_images", strip_front=True,
+           rel_base="config")
 ```
 
 ## 依赖与被依赖

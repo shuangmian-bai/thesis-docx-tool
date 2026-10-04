@@ -16,12 +16,17 @@ from docxconvert.markdown import render
 from docxconvert.parse import parse_docx
 
 
-def _rewrite_image_paths(blocks, written, md_dir, images_dir):
-    """把图片块里的 zip 内路径改写为相对 md 文件的路径。"""
+def _rewrite_image_paths(blocks, written, rel_base, images_dir):
+    """把图片块里的 zip 内路径改写为相对 rel_base 目录的引用路径。
+
+    rel_base 是引用路径的计算基准，必须与构建端解析图片时的基准一致：
+    build 以 `config/` 为基准拼接图片路径，故喂给 build 的 md 也要按
+    `config/` 写引用（如 `images/xxx.png`）。
+    """
     for blk in blocks:
         if blk[0] == "img" and blk[1] in written:
             full = os.path.join(images_dir, written[blk[1]])
-            rel = os.path.relpath(full, md_dir).replace(os.sep, "/")
+            rel = os.path.relpath(full, rel_base).replace(os.sep, "/")
             blk = list(blk)
             blk[1] = rel
             yield tuple(blk)
@@ -43,14 +48,20 @@ def _strip_front(blocks):
 
 
 def convert_to(docx_path: str, out_md: str, images_dir: str,
-               strip_front: bool = False) -> Tuple[str, str, Dict[str, int]]:
+               strip_front: bool = False,
+               rel_base: Optional[str] = None
+               ) -> Tuple[str, str, Dict[str, int]]:
     """把 docx 拆解为 Markdown 与图片目录（核心流程，不含参数解析）。
 
     参数：
         docx_path:   待拆解的 docx 绝对/相对路径。
         out_md:      Markdown 产物路径（目录不存在会自动创建）。
-        images_dir:  图片抽取目录；md 中的图片路径按相对该 md 的位置改写。
+        images_dir:  图片抽取目录。
         strip_front: 是否丢弃第一个以数字开头的一级标题之前的前置块。
+        rel_base:    md 中图片引用路径的计算基准目录；必须与构建端的解析基准
+                     一致——产物要喂给 build 时传 `config/` 目录（引用写成
+                     `images/xxx.png`）。None 时按 md 自身所在目录计算
+                     （独立 convert 命令的原行为）。
 
     返回：(md 绝对路径, 图片目录绝对路径, 各类块计数)。
     """
@@ -60,13 +71,13 @@ def convert_to(docx_path: str, out_md: str, images_dir: str,
 
     out_md = os.path.abspath(out_md)
     images_dir = os.path.abspath(images_dir)
-    md_dir = os.path.dirname(out_md)
+    rel_base = os.path.abspath(rel_base) if rel_base else os.path.dirname(out_md)
 
     blocks, images = parse_docx(docx_path)
     print(f"解析得到 {len(blocks)} 个块，图片 {len(images)} 张")
 
     written: Dict[str, str] = extract_images(docx_path, images, images_dir)
-    blocks = list(_rewrite_image_paths(blocks, written, md_dir, images_dir))
+    blocks = list(_rewrite_image_paths(blocks, written, rel_base, images_dir))
 
     if strip_front:
         before = len(blocks)
@@ -74,7 +85,7 @@ def convert_to(docx_path: str, out_md: str, images_dir: str,
         print(f"--strip-front：丢弃 {before - len(blocks)} 个前置块")
 
     md = render(blocks)
-    os.makedirs(md_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(out_md), exist_ok=True)
     with open(out_md, "w", encoding="utf-8") as fh:
         fh.write(md)
 

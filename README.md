@@ -160,6 +160,12 @@ python3 main.py fig [图名]
 | `table` | 二维单元格列表 | `| a | b |` 管道表格 |
 | `img` | `(图片相对路径, 图题说明)` | `![说明](路径)` |
 
+图片路径**一律相对 `config/` 目录**解析（不是相对 md 文件）：素材照片放进
+`config/images/` 后，md 里直接写 `![图x.y 说明](images/照片.png)` 即可；
+`fig` 生成的架构图 PNG 也在该目录，引用方式相同（如 `images/fig3_1.png`）。
+`run 用户论文.docx` 自动拆解出的图片落 `config/images/<docx名>_images/`，
+引用同样写成 `images/<docx名>_images/xxx.png`。
+
 ## 模块结构
 
 ```
