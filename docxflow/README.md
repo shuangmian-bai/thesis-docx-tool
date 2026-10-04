@@ -36,7 +36,7 @@ Word 路线默认剥离原 docx 的封面/承诺书/目录（这些由模板提�
 
 ```
 python3 main.py run [用户论文.docx]
-    [--template 模板.docx]   # 默认 config/template.docx
+    [--template 模板.docx]   # 外部模板，默认 config/template.docx；构建与审计都跟随
     [--force]                # 允许覆盖已有的同名拆解 Markdown
     [--keep-front]           # Word 路线保留原 docx 前置页
     [--no-fig] [--no-toc] [--no-audit]   # 关闭对应阶段

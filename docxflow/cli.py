@@ -133,12 +133,20 @@ def _toc_stage(product: str, template: str, no_toc: bool) -> bool:
     return True
 
 
-def _audit_stage(product: str) -> None:
-    """成品审计：报告照打，任何问题都不影响流水线已产出的成品。"""
+def _audit_stage(product: str, template: str, template_explicit: bool) -> None:
+    """成品审计：报告照打，任何问题都不影响流水线已产出的成品。
+
+    用户显式指定外部模板时把 --template 透传给 audit（审计必须拿同一个模板比，
+    audit 同时会停用只对默认模板登记的预期偏离表）；用默认模板时不传，
+    保留 audit 的默认行为。
+    """
     _step("阶段 · 成品格式审计")
+    argv = ["audit", "--product", product]
+    if template_explicit:
+        argv += ["--template", template]
     try:
         from docxaudit.cli import main as audit_main
-        audit_main(["audit", "--product", product])
+        audit_main(argv)
     except SystemExit as e:
         # audit 以退出码 1 表达「有注意项」，对流水线而言只是报告，不当失败
         if e.code:
@@ -154,8 +162,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("docx", nargs="?", default=None,
                     help="用户已写好的论文 docx：先自动拆解入 config/章节/ 再生成；"
                          "不传则直接使用 config/章节/ 下现有 Markdown")
-    ap.add_argument("--template", default=DEFAULT_TEMPLATE,
-                    help="模板 docx 路径（默认 config/template.docx）")
+    ap.add_argument("--template", default=None,
+                    help="外部模板 docx 路径（默认 config/template.docx）；"
+                         "指定后构建与审计都使用该模板")
     ap.add_argument("--force", action="store_true",
                     help="Word 路线下允许覆盖 config/章节/ 中已存在的同名拆解产物")
     ap.add_argument("--keep-front", action="store_true",
@@ -166,7 +175,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--no-audit", action="store_true", help="跳过成品格式审计")
     args = ap.parse_args(argv)
 
-    template = os.path.abspath(args.template)
+    # 区分「未传 --template」与「显式指定」：默认模板走 audit 预期偏离表，
+    # 显式外部模板需透传给 audit 并停用该表（见 _audit_stage）
+    template_explicit = args.template is not None
+    template = os.path.abspath(args.template) if args.template else DEFAULT_TEMPLATE
 
     # Word 路线的拆解落点：章节源与图片都归 config/，build 以 config/ 为根解析图片相对路径
     md_target = None
@@ -197,7 +209,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     _toc_stage(product, template, args.no_toc)
 
     if not args.no_audit:
-        _audit_stage(product)
+        _audit_stage(product, template, template_explicit)
 
     _step("完成")
     print(f"成品：{os.path.relpath(product, HERE)}")

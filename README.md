@@ -92,6 +92,8 @@ python3 main.py run [用户论文.docx]
   再出成品（Word 路线）；默认剥离原封面/承诺书/目录，`--keep-front` 保留；
   同名 Markdown 已存在时拒绝覆盖，`--force` 允许。
 - 开工前一次性检查模板、签名图、章节源是否齐备，缺件直接报齐，不跑到半途才失败。
+- `--template` 可指定任意外部模板（默认 `config/template.docx`），两遍构建与成品审计
+  都使用该模板；外部模板下审计会自动停用只对默认模板登记的预期偏离表，按真实差异报告。
 - 自动转 PDF 量页码依赖 LibreOffice 与 poppler-utils，缺失则跳过回填、不影响出稿。
 - 阶段细节与设计约定见 `docxflow/README.md`。
 
