@@ -8,12 +8,16 @@
 """
 import argparse
 import os
+import re
+import zipfile
 from typing import Dict, List, Optional, Tuple
 
 from docxconvert import HERE
 from docxconvert.extract import extract_images
 from docxconvert.markdown import render
 from docxconvert.parse import parse_docx
+
+W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
 def _rewrite_image_paths(blocks, written, rel_base, images_dir):
@@ -89,6 +93,67 @@ def prepare_blocks(docx_path: str, images_dir: str, *,
         if not quiet:
             print(f"--strip-front：丢弃 {before - len(blocks)} 个前置块")
     return blocks, images_dir, written
+
+
+def extract_cover(docx_path: str) -> Dict[str, str]:
+    """从 docx 封面表格提取字段，返回 {标签: 值}。
+
+    封面表格位于 document.xml body 开头，第一列是标签（如「学生姓名」），
+    第二列是值。只提取能匹配到 COVER 键的字段。
+    """
+    from docxbuild.docinfo import COVER
+    import xml.etree.ElementTree as ET
+
+    result = {}
+    with zipfile.ZipFile(docx_path) as z:
+        doc_xml = z.read("word/document.xml")
+    root = ET.fromstring(doc_xml)
+    body = root.find(f"{W}body")
+    if body is None:
+        return result
+
+    # 封面表格是 body 里第一个表格
+    tbl = body.find(f"{W}tbl")
+    if tbl is None:
+        return result
+
+    for row in tbl.findall(f"{W}tr"):
+        tcs = row.findall(f"{W}tc")
+        if len(tcs) < 2:
+            continue
+        label = "".join(t.text or "" for t in tcs[0].iter(f"{W}t")).strip()
+        if label not in COVER:
+            continue
+        value = "".join(t.text or "" for t in tcs[1].iter(f"{W}t")).strip()
+        if value:
+            result[label] = value
+    return result
+
+
+def extract_template_title(docx_path: str) -> str:
+    """从 docx 诚信承诺书中提取示例题目（用于 build 时定位替换）。
+
+    承诺书第一段通常含「《题目》」，提取书名号内的文字作为 template_title。
+    """
+    import xml.etree.ElementTree as ET
+    with zipfile.ZipFile(docx_path) as z:
+        doc_xml = z.read("word/document.xml")
+    root = ET.fromstring(doc_xml)
+    body = root.find(f"{W}body")
+    if body is None:
+        return ""
+    # 找含「承诺书」的段落后的第一段正文（通常含书名号题目）
+    found_commit = False
+    for p in body.iter(f"{W}p"):
+        text = "".join(t.text or "" for t in p.iter(f"{W}t"))
+        if "承诺书" in text:
+            found_commit = True
+            continue
+        if found_commit and "《" in text and "》" in text:
+            m = re.search(r"《(.+?)》", text)
+            if m:
+                return m.group(1)
+    return ""
 
 
 def convert_to(docx_path: str, out_md: str, images_dir: str,

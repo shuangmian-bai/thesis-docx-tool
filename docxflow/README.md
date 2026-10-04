@@ -21,7 +21,7 @@ Word 路线默认剥离原 docx 的封面/承诺书/目录（这些由模板提�
 
 | 阶段 | 动作 | 跳过条件 |
 |---|---|---|
-| 开工前检查 | 模板、签名图、章节源、覆盖冲突一次性报齐；cover.json 缺失仅警告 | 不可跳过 |
+| 开工前检查 | 模板、签名图、章节源、覆盖冲突一次性报齐 | 不可跳过 |
 | 拆解（仅 Word 路线） | 调 `docxconvert.convert_to()` 落到 `config/` | 不传 docx 时无此阶段 |
 | 架构图 | 调 `docxfig.generate()` 渲染 `config/figures/*.md` | 无图定义，或 `--no-fig` |
 | 构建（第一遍） | 调 `docxbuild.cli.main()` 生成成品 docx | 不可跳过 |

@@ -50,7 +50,7 @@ python3 main.py gui
 | `wizard_page.py` | docx/模式/模板选择，`open_template` 信号打开模板对话框 |
 | `review_page.py` | 块树、类型筛选、各类块编辑器、类型互转/插入/删除/撤销、AI 操作与还原 |
 | `block_ops.py` | 块结构操作纯函数（can_convert/convert/new_block/new_image_block，无 Qt 依赖） |
-| `template_page.py` | 模板预览与修复对话框：`docxbuild.tplinspect` 报告、cover.json 与签名图修复、`template_changed` 信号 |
+| `template_page.py` | 模板预览与修复对话框：`docxbuild.tplinspect` 报告、封面字段（存工作目录 cover.json）与签名图修复、`template_changed` 信号 |
 | `blocks_model.py` | 块类型中文标签、摘要、可编辑性判定（无 Qt 依赖） |
 | `settings_dialog.py` | AI 配置弹窗（provider 预设、key 掩码、连接测试） |
 | `workers.py` | ParseWorker / StructureWorker / RewriteWorker（QThread）与 RunProcess（QProcess） |

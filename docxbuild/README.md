@@ -19,12 +19,12 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| `docinfo.py` | 论文著录信息：从 `cover.json` 读题目、封面字段、版本号（默认占位符） |
+| `docinfo.py` | 论文著录信息：题目、封面字段、版本号（默认占位符；通过 `load_cover_from()` 从指定 cover.json 加载） |
 | `layout.py` | 版式常量：正文区宽度、插图尺寸上限、签名图宽度 |
 | `mdparse.py` | Markdown → 块序列（纯文本，不碰 XML） |
 | `fragments.py` | 块 → OOXML 片段（段落、标题、有序列表项、图、表、代码、参考文献、图题） |
 | `template.py` | 模板骨架处理：命名空间登记、封面填充、目录重建、签名图替换、样式清理、列表编号注入 |
-| `tplinspect.py` | 模板只读检视（骨架/封面/承诺书/TOC/样式/编号/页面设置）与 cover.json、签名图修复入口；无 Qt 依赖 |
+| `tplinspect.py` | 模板只读检视（骨架/封面/承诺书/TOC/样式/编号/页面设置）与封面字段、签名图修复入口（支持工作目录 cover.json）；无 Qt 依赖 |
 | `toc_pages.py` | 从渲染出的 PDF 反查各级标题页码，写入 `toc_pages.json` |
 | `cli.py` | 主流程编排（`main(argv)`） |
 
@@ -51,8 +51,9 @@ from docxbuild.cli import main
 main(["--template", "template.docx"])   # 等价于 python3 main.py build --template template.docx
 ```
 
-封面信息从工具根目录的 `cover.json` 读取（不入库），字段缺省时回退到 `docinfo.py`
-里的占位符。目录页码由 `toc_pages.json` 提供（由 `toc_pages.py` 从 PDF 量出），
+封面信息通过 `build(cover_path=...)` 从指定路径的 `cover.json` 读取（Word 路线
+自动从 docx 提取后存哈希工作目录，GUI 可修改），不传时回退到 `docinfo.py` 里的
+占位符。目录页码由 `toc_pages.json` 提供（由 `toc_pages.py` 从 PDF 量出），
 缺失时目录页码留空，在 Word 中按 F9 可重建域结果。
 
 ## 依赖与被依赖

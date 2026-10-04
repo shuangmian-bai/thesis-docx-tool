@@ -74,7 +74,8 @@ class MainWindow(QMainWindow):
 
     def _open_template(self, path: str = ""):
         path = path or self.wizard.tpl_edit.text().strip() or DEFAULT_TEMPLATE
-        dlg = TemplateDialog(os.path.abspath(path), HERE, self)
+        work_dir = self._cur.get("work_dir") if hasattr(self, "_cur") else None
+        dlg = TemplateDialog(os.path.abspath(path), HERE, work_dir, self)
         dlg.template_changed.connect(self.wizard.tpl_edit.setText)
         dlg.exec()
 

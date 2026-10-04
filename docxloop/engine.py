@@ -105,12 +105,24 @@ def run_closed_loop(src_path: str, template_path: str,
 
     if out_docx is None:
         # ── convert ──
-        from docxconvert.cli import convert_to
+        from docxconvert.cli import convert_to, extract_cover, extract_template_title
+        from docxbuild.docinfo import VERSION, save_cover_to
         md_out = os.path.join(wdir, "src.md")
         img_dir = os.path.join(wdir, "images")
         os.makedirs(img_dir, exist_ok=True)
         # rel_base=wdir：md 里图片引用写成 images/xxx.png，build 时 IMG_BASE=wdir
         convert_to(src_path, md_out, img_dir, strip_front=True, rel_base=wdir)
+
+        # 提取封面字段存到工作目录 cover.json（与 docxflow Word 路线一致），
+        # 每个论文独立，不污染全局；build 时通过 cover_path 加载
+        cover = extract_cover(src_path)
+        tpl_title = extract_template_title(src_path)
+        save_cover_to(os.path.join(wdir, "cover.json"), {
+            "title": cover.get("成果名称", ""),
+            "version": VERSION,
+            "template_title": tpl_title,
+            "cover": cover,
+        })
 
         # ── build ──
         from docxbuild.cli import build
@@ -123,6 +135,7 @@ def run_closed_loop(src_path: str, template_path: str,
             output_dir=os.path.join(wdir, "output"),
             toc_pages=os.path.join(wdir, "toc.json"),
             images_base=wdir,
+            cover_path=os.path.join(wdir, "cover.json"),
         )
 
     return compare(src_path, out_docx)

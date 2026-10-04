@@ -24,12 +24,14 @@ class TemplateDialog(QDialog):
 
     template_changed = pyqtSignal(str)
 
-    def __init__(self, template_path: str, tool_root: str, parent=None):
+    def __init__(self, template_path: str, tool_root: str, work_dir: str = None,
+                 parent=None):
         super().__init__(parent)
         self.setWindowTitle("模板预览与修复")
         self.resize(860, 720)
         self._root = tool_root
         self._path = template_path
+        self._work_dir = work_dir  # 当前论文的哈希工作目录（None=全局设置）
         self._cover_edits = {}
         self._build()
         self._load_cover_form()
@@ -58,7 +60,8 @@ class TemplateDialog(QDialog):
         root.addWidget(self.report, 3)
 
         # 封面字段修复表单
-        box = QGroupBox("修复一：封面与承诺书字段（保存到 config/cover.json，"
+        save_loc = "当前论文工作目录" if self._work_dir else "config/cover.json"
+        box = QGroupBox(f"修复一：封面与承诺书字段（保存到 {save_loc}，"
                         "构建时自动填入；不修改模板本体）")
         form_host = QWidget()
         form = QFormLayout(form_host)
@@ -77,7 +80,7 @@ class TemplateDialog(QDialog):
         scroll.setWidgetResizable(True)
         bl = QVBoxLayout(box)
         bl.addWidget(scroll)
-        btn_save = QPushButton("保存封面字段到 cover.json")
+        btn_save = QPushButton(f"保存封面字段到 {save_loc}")
         btn_save.clicked.connect(self._save_cover)
         bl.addWidget(btn_save)
         root.addWidget(box, 2)
@@ -172,7 +175,7 @@ class TemplateDialog(QDialog):
         return "\n".join(L)
 
     def _load_cover_form(self):
-        form = tplinspect.load_cover_form(self._root)
+        form = tplinspect.load_cover_form(self._root, self._work_dir)
         self.title_edit.setText(form["title"])
         self.version_edit.setText(form["version"])
         self.tpl_title_edit.setText(form["template_title"])
@@ -196,7 +199,8 @@ class TemplateDialog(QDialog):
             self.refresh()
 
     def _save_cover(self):
-        p = tplinspect.save_cover_form(self._root, self._collect_form())
+        p = tplinspect.save_cover_form(self._root, self._collect_form(),
+                                       self._work_dir)
         self.sign_status.setText(
             f"封面字段已保存：{os.path.relpath(p, self._root)}（重新构建即生效）")
 

@@ -49,14 +49,23 @@ OUTPUT_DIR = os.path.join(HERE, "output")
 
 
 def build(template=None, chap_dir=None, output_dir=None, toc_pages=None,
-          images_base=None):
+          images_base=None, cover_path=None):
     """核心构建流程（不含命令行解析）。
 
     所有路径参数均可注入，便于批量/多线程场景下用哈希隔离的工作目录调用，
     避免多个任务共享 config/章节、config/images 造成污染。
 
+    cover_path：论文封面字段配置路径（哈希工作目录下的 cover.json）。
+    不传时使用 docinfo 占位符默认值（MD 路线 / 未提供封面信息的场景）。
+
     参数为 None 时回退到全局默认值（兼容旧的命令行与单线程调用）。
     """
+    from docxbuild.docinfo import load_cover_from, reset_cover
+    # 每次构建前重置封面，避免上一个论文的封面残留污染本次构建
+    reset_cover()
+    if cover_path:
+        load_cover_from(cover_path)
+
     TEMPLATE = template or DEFAULT_TEMPLATE
     CHAP = chap_dir or CHAP_DIR
     OUT = output_dir or OUTPUT_DIR

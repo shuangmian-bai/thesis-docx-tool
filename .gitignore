@@ -1,7 +1,4 @@
 # ===== 个人数据与论文素材（config/ 模块）：一律排除，禁止入库 =====
-# 使用者的真实封面信息（姓名、学号等）
-config/cover.json
-
 # AI 服务配置（含个人 API Key，仅本机保存；默认值见 docxai/config.py）
 config/ai.json
 

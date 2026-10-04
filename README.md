@@ -96,8 +96,10 @@ pip install -r requirements.txt
 # 学校论文模板放到 config/，命名为 template.docx（不入库）
 cp /path/to/学校论文模板.docx config/template.docx
 
-# 封面信息：直接编辑 config/cover.json（不入库；缺省用 docxbuild/docinfo.py 的占位符）
-# 编辑 config/cover.json，填入题目、姓名、学号等
+# 封面信息：Word 路线（run 用户论文.docx）自动从 docx 封面表格提取，
+# 存入哈希工作目录的 cover.json（每论文独立，互不污染）；
+# 也可在 GUI「模板预览与修复」页手动修改。
+# MD 路线（直接写 config/章节/*.md）使用 docxbuild/docinfo.py 的占位符。
 
 # 承诺书签名图放到 config/images/signature.png（自备，不入库）
 ```
@@ -193,7 +195,7 @@ python3 main.py build [--template 模板.docx]
 
 - 默认模板为 `config/template.docx`，可用 `--template` 指定其它模板。
 - 产物：`output/论文_v1_YYYYMMDD.docx` + `output/论文正文.md`（各章合并视图）。
-- 封面字段从 `config/cover.json` 读取；承诺书签名图取自 `config/images/signature.png`（自备）。
+- 封面字段从哈希工作目录的 `cover.json` 读取（Word 路线自动从 docx 提取，GUI 可修改）；承诺书签名图取自 `config/images/signature.png`（自备）。
 
 ### convert
 
@@ -249,7 +251,7 @@ python3 main.py gui
   删除块；插入/删除/改类型/AI 整批改均可逐步撤销，文字改动可逐块还原。
 - 「模板预览与修复」页（向导按钮或菜单「设置」）：只读检视骨架部件序列、封面
   字段、承诺书题目占位符、TOC 域、样式、decimal 编号、页面尺寸与页边距，按
-  错误/警告列出问题；封面字段可直接写入 `config/cover.json`、签名图可替换
+  错误/警告列出问题；封面字段可写入当前论文工作目录的 cover.json、签名图可替换
   `config/images/signature.png`；骨架与样式本体请在 Word 中修改模板文件后
   点「重新检测」复验，工具不直接改写模板内部 XML。
 - AI 配置在菜单「设置 → AI 配置」，保存在 `config/ai.json`（不入库）；
@@ -305,7 +307,7 @@ main.py  ── 统一入口，按子命令分发
 
 | 模块 | 职责 |
 |---|---|
-| `docinfo` | 论文著录信息：从 `config/cover.json` 读题目、封面字段、版本号（默认占位符） |
+| `docinfo` | 论文著录信息：题目、封面字段、版本号（默认占位符；Word 路线从 docx 提取后存工作目录 cover.json） |
 | `layout` | 版式常量：正文区宽度、插图尺寸上限、签名图宽度 |
 | `mdparse` | Markdown → 块序列（纯文本，不碰 XML） |
 | `fragments` | 块 → OOXML 片段（段落、标题、有序列表项、图、表、代码、参考文献、图题） |
@@ -480,7 +482,7 @@ python3 main.py loop 论文.docx --no-reuse
 ## 常见问题
 
 - **build 报找不到模板**：把模板放到 `config/template.docx` 或用 `--template` 指定。
-- **build 报找不到签名图**：在 `config/images/signature.png` 放签名图，或从 `config/cover.json`/模板调整。
+- **build 报找不到签名图**：在 `config/images/signature.png` 放签名图。
 - **convert 后标题层级不对**：用户 docx 的标题样式可能不是模板的 `1`/`2`/`3`/`4`，
   工具会尝试匹配 `Heading 1` 等常见样式名；匹配不到的当正文处理。
   可用 `python3 main.py gui` 选 AI 模式自动修正结构，或在审阅页手动调整后再出稿。

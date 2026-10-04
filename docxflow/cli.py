@@ -40,7 +40,6 @@ CONFIG_DIR = os.path.join(HERE, "config")
 FIG_DIR = os.path.join(CONFIG_DIR, "figures")
 CONFIG_IMAGES = os.path.join(CONFIG_DIR, "images")
 SIGNATURE = os.path.join(CONFIG_IMAGES, "signature.png")
-COVER_JSON = os.path.join(CONFIG_DIR, "cover.json")
 DEFAULT_TEMPLATE = os.path.join(CONFIG_DIR, "template.docx")
 
 # soffice 使用独立用户配置目录，避免与用户正在运行的 LibreOffice 抢 profile
@@ -147,10 +146,8 @@ def _precheck(template: str, have_docx: bool, md_target: Optional[str],
         msg = "\n  ".join(problems)
         raise SystemExit(f"开工前检查未通过：\n  {msg}")
 
-    # cover.json 缺失不阻断：占位符也能出稿，只是封面字段待填
-    if not os.path.exists(COVER_JSON):
-        print("[注意] config/cover.json 不存在，封面字段将使用占位符"
-              "（可在 GUI 模板预览页或直接编辑该文件填写）")
+    # 封面字段：Word 路线从 docx 自动提取存工作目录；GUI 路线在模板预览页填写；
+    # MD 路线使用占位符，均可正常出稿（不再依赖全局 config/cover.json）
 
 
 def _fig_stage(no_fig: bool) -> bool:
@@ -175,7 +172,7 @@ def _build(template: str, work_dir: Optional[str] = None) -> str:
 
     work_dir 为 None 时走旧的全局目录（MD 路线）；
     传入时用哈希工作目录（Word 路线），chap_dir/output_dir/toc_pages/images_base
-    都指向工作目录，避免多论文共享 config/章节 造成污染。
+    都指向工作目录，cover_path 指向工作目录的 cover.json，避免多论文共享造成污染。
     """
     from docxbuild.cli import build as build_fn
     if work_dir:
@@ -185,6 +182,7 @@ def _build(template: str, work_dir: Optional[str] = None) -> str:
             output_dir=os.path.join(work_dir, "output"),
             toc_pages=os.path.join(work_dir, "toc.json"),
             images_base=work_dir,
+            cover_path=os.path.join(work_dir, "cover.json"),
         )
     else:
         out = build_fn(template=template)
@@ -295,6 +293,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         # build 时 images_base=work_dir，与工作目录结构匹配
         convert_to(args.docx, md_target, images_dir,
                    strip_front=not args.keep_front, rel_base=work_dir)
+        # 提取封面字段并存到工作目录的 cover.json（每个论文独立，不污染全局）
+        from docxconvert.cli import extract_cover, extract_template_title
+        from docxbuild.docinfo import save_cover_to
+        cover = extract_cover(args.docx)
+        tpl_title = extract_template_title(args.docx)
+        title = cover.get("成果名称", "")
+        save_cover_to(os.path.join(work_dir, "cover.json"), {
+            "title": title,
+            "version": VERSION,
+            "template_title": tpl_title,
+            "cover": cover,
+        })
+        print(f"  已提取封面字段 {len(cover)} 项 → cover.json"
+              f"（承诺书题目：{tpl_title or '未识别'}）")
         # 把拆解产物按章节拆分写入工作目录的 章节/ 子目录
         write_chapters_from_blocks_to_workdir(md_target, work_dir)
 

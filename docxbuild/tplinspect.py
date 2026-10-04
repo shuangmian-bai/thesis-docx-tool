@@ -189,15 +189,19 @@ def inspect_template(path: str) -> dict:
 
 
 # ── 修复入口：cover.json 读写（不碰模板本体）────────────────────────
-def cover_json_path(tool_root: str) -> str:
+def cover_json_path(tool_root: str, work_dir: str = None) -> str:
+    """封面配置路径。有 work_dir 时用工作目录的 cover.json（每论文独立），
+    否则回退到全局 config/cover.json（兼容旧行为）。"""
+    if work_dir:
+        return os.path.join(work_dir, "cover.json")
     return os.path.join(tool_root, "config", "cover.json")
 
 
-def load_cover_form(tool_root: str) -> dict:
+def load_cover_form(tool_root: str, work_dir: str = None) -> dict:
     """读 cover.json 为表单 dict；不存在时返回空值表单（键固定）。"""
     form = {"title": "", "template_title": "", "version": "",
             "cover": {k: "" for k in COVER}}
-    p = cover_json_path(tool_root)
+    p = cover_json_path(tool_root, work_dir)
     if os.path.exists(p):
         with open(p, encoding="utf-8") as fh:
             cfg = json.load(fh)
@@ -209,9 +213,12 @@ def load_cover_form(tool_root: str) -> dict:
     return form
 
 
-def save_cover_form(tool_root: str, form: dict):
-    """把表单落为 config/cover.json（空字段也保留，便于继续填写）。"""
-    p = cover_json_path(tool_root)
+def save_cover_form(tool_root: str, form: dict, work_dir: str = None):
+    """把表单落为 cover.json（空字段也保留，便于继续填写）。
+
+    有 work_dir 时存到工作目录（每论文独立），否则存全局 config/cover.json。
+    """
+    p = cover_json_path(tool_root, work_dir)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     cfg = {"title": form["title"].strip(),
            "template_title": form["template_title"].strip(),
