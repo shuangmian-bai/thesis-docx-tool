@@ -1,7 +1,11 @@
 # thesis-docx-tool
 
-论文 Word 排版与拆解工具。围绕一套共用的「块模型」，提供五个子命令，
-覆盖论文从撰写到定稿的完整流程：
+论文 Word 排版与拆解工具。日常使用只需一个子命令 **run**，一条命令端到端出成品：
+
+- **run**：一键流水线。自动串联 拆解（可选）→ 架构图 → 构建 → 转 PDF 量目录页码 → 二次构建 → 格式审计，
+  支持两条路径：直接写 Markdown，或传入已写好的 Word 自动拆解后重排。
+
+其余五个是分步原子命令，供单步调试与高级用途（run 在内部编排它们）：
 
 - **build**：把按章拆分的 Markdown（`章节/*.md`）套用学校论文模板骨架，生成符合格式的 Word 论文
 - **convert**：把已写好的 Word 论文反向拆解为同格式 Markdown，便于二次编辑
@@ -23,53 +27,73 @@ pip install -r requirements.txt   # 仅 Pillow；只用 build/convert/audit/toc 
 
 ## 快速开始
 
-### 1. 准备模板与封面信息
+### 1. 准备素材（只需一次）
 
 ```bash
-# 把学校论文模板放到 config/，命名为 template.docx（不入库）
+# 学校论文模板放到 config/，命名为 template.docx（不入库）
 cp /path/to/学校论文模板.docx config/template.docx
 
-# 复制封面信息示例，填写真实信息（cover.json 不入库）
+# 封面信息：复制示例后填写真实信息（cover.json 不入库）
 cp config/cover.example.json config/cover.json
 # 编辑 config/cover.json，填入题目、姓名、学号等
+
+# 承诺书签名图放到 config/images/signature.png（自备，不入库）
 ```
 
-### 2. 撰写或拆解论文
+### 2. 一条命令出成品（二选一）
 
-方式一：直接写 Markdown。在 `config/章节/` 下按章建文件，如 `01_设计思路.md`，格式见下「块模型」。
-
-方式二：把已写好的 Word 论文拆解为 Markdown：
+路径一：直接写 Markdown。在 `config/章节/` 下按章建文件（如 `01_设计思路.md`，
+格式见下「块模型」），架构图 DSL 放 `config/figures/`，自定义插图放 `config/images/`，然后：
 
 ```bash
-python3 main.py convert 用户论文.docx --strip-front
-# 生成 output/用户论文.md + output/用户论文_images/，把内容整理到 config/章节/ 下
+python3 main.py run
 ```
 
-### 3. 生成 Word 论文
+路径二：传入已写好的 Word，自动拆解为章节 Markdown 后直接套模板出成品：
 
 ```bash
-python3 main.py build
-# 生成 output/论文_v1_YYYYMMDD.docx（日期取当天）
+python3 main.py run 用户论文.docx          # 默认剥离原封面/目录（模板自带）
+python3 main.py run 用户论文.docx --force  # 拆解产物已存在、确认覆盖时
 ```
 
-### 4. 回填目录页码（两遍构建）
+`run` 会依次自动完成：架构图渲染 → 构建第一遍 → LibreOffice 转 PDF → 量目录页码 →
+第二遍构建（页码回填）→ 成品格式审计，产物为 `output/论文_v1_YYYYMMDD.docx`。
+拆解得到的 Markdown 在 `config/章节/` 中，改完后不带 docx 重跑 `run` 即可重新出稿。
+
+本机没有 LibreOffice（`soffice`）或 `pdftotext` 时，页码回填自动跳过、照常出稿，
+在 Word 中按 Ctrl+A 后 F9 即可更新目录；可用 `--no-fig` / `--no-toc` / `--no-audit`
+关闭对应阶段。
+
+### 高级：分步命令
+
+需要单步调试时才用各原子命令，等价于 `run` 内部的各阶段：
 
 ```bash
-python3 main.py build                                    # 第一遍：目录页码留空
-soffice --headless --convert-to pdf output/论文_v1_*.docx # 转 PDF
-python3 main.py toc output/论文_v1_*.pdf                  # 量页码 → output/toc_pages.json
-python3 main.py build                                    # 第二遍：目录带上页码
-```
-
-### 5. 审计格式
-
-```bash
-python3 main.py audit                  # 总览
-python3 main.py audit parts styles     # 只查指定项
-python3 main.py audit --list           # 列出全部检查项
+python3 main.py fig                      # 只渲染架构图
+python3 main.py build                    # 只构建（不转 PDF、不审计）
+python3 main.py convert 用户论文.docx --strip-front   # 只拆解，产物落 output/
+soffice --headless --convert-to pdf output/论文_v1_*.docx
+python3 main.py toc output/论文_v1_*.pdf
+python3 main.py audit                    # 总览；audit --list 列出全部检查项
 ```
 
 ## 子命令详解
+
+### run（一键流水线，推荐）
+
+```
+python3 main.py run [用户论文.docx]
+    [--template 模板.docx] [--force] [--keep-front]
+    [--no-fig] [--no-toc] [--no-audit]
+```
+
+- 不带 docx：直接使用 `config/章节/*.md` 出成品（MD 路线）。
+- 带 docx：先把该 docx 拆解为 `config/章节/<名>.md`（图片入 `config/images/<名>_images/`），
+  再出成品（Word 路线）；默认剥离原封面/承诺书/目录，`--keep-front` 保留；
+  同名 Markdown 已存在时拒绝覆盖，`--force` 允许。
+- 开工前一次性检查模板、签名图、章节源是否齐备，缺件直接报齐，不跑到半途才失败。
+- 自动转 PDF 量页码依赖 LibreOffice 与 poppler-utils，缺失则跳过回填、不影响出稿。
+- 阶段细节与设计约定见 `docxflow/README.md`。
 
 ### build
 
@@ -141,11 +165,21 @@ python3 main.py fig [图名]
 ```
 main.py  ── 统一入口，按子命令分发
   │
+  ├─ run     → docxflow/    （一键流水线，编排下面四个模块，面向用户的主入口）
   ├─ build   → docxbuild/   （Markdown → docx + 目录页码回填）
   ├─ convert → docxconvert/ （docx → Markdown）
   ├─ audit   → docxaudit/   （docx 格式审计）
   └─ fig     → docxfig/     （架构图 DSL → PNG）
 ```
+
+### docxflow/ —— 一键流水线
+
+| 模块 | 职责 |
+|---|---|
+| `cli` | run 主流程编排：前置检查、拆解（Word 路线）、fig、build、PDF 量页码二遍构建、audit |
+
+只编排、不重写：所有实际工作都调用各原子模块的公开接口，同一职责全项目只有一份实现。
+新增需要多步完成的能力必须接进本流水线，不让用户手工串联。详见 `docxflow/README.md`。
 
 ### docxbuild/ —— Markdown → docx
 
@@ -210,9 +244,14 @@ DSL 语法见 `docxfig/README.md`。
 ## 数据流闭环
 
 ```
-章节/*.md ──build──▶ 论文.docx ──convert──▶ 拆解.md
-    ▲                                        │
-    └──────────── 二次编辑后重 build ◀────────┘
+                        ┌── run（一键流水线）──────────────────────┐
+                        │                                          │
+config/figures/*.md ──fig──▶ config/images/*.png                   │
+                                 │                                 ▼
+章节/*.md ──────────────────build──▶ 论文.docx ──PDF/toc──▶ build（页码回填）──▶ audit
+    ▲                                │
+    │                           convert
+    └──────── 二次编辑后重 run ◀──────┘（Word 路线直接由 run 内部完成拆解入 config/章节/）
 ```
 
 `build` 与 `convert` 共用块模型，已验证 Markdown → docx → Markdown 块级无损。

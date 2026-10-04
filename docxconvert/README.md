@@ -21,7 +21,7 @@ Markdown 文件 + 抽取出的图片目录。产出的 Markdown 可直接喂给 
 | `parse.py` | 解析 docx 的 `word/document.xml`，按 body 子元素顺序把段落/表格/图片转成块序列 |
 | `extract.py` | 从 docx 的 `word/media/` 里把图片抽取到目标目录 |
 | `markdown.py` | 块序列渲染为 `章节/*.md` 格式的 Markdown 文本 |
-| `cli.py` | 主流程编排（`main(argv)`） |
+| `cli.py` | 主流程编排：核心函数 `convert_to()`，命令行 `main(argv)` 只负责参数与默认落点 |
 
 ## 解析要点
 
@@ -36,15 +36,20 @@ Markdown 文件 + 抽取出的图片目录。产出的 Markdown 可直接喂给 
 ## 关键 API 与用法
 
 ```python
-from docxconvert.cli import main
+from docxconvert.cli import main, convert_to
+# 命令行入口（产物默认落 output/）
 main(["用户论文.docx", "--strip-front"])   # 等价于 python3 main.py convert 用户论文.docx --strip-front
+# 指定落点的核心函数（docxflow 用它把拆解产物直接落 config/章节/ 与 config/images/）
+convert_to("用户论文.docx", "config/章节/用户论文.md",
+           "config/images/用户论文_images", strip_front=True)
 ```
 
 ## 依赖与被依赖
 
 - **依赖**：Python 标准库（`zipfile` / `xml.etree` / `re` / `os` / `shutil`）。
   **不用 python-docx、不用 pandoc**。
-- **被谁用**：`main.py` 的 `convert` 子命令。
+- **被谁用**：`main.py` 的 `convert` 子命令；`docxflow` 一键流水线（Word 路线）
+  直接调用 `convert_to()`，不重复实现拆解逻辑。
 
 ## 注意点
 

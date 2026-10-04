@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """thesis-docx-tool 统一入口。
 
-五个子命令对应论文排版与拆解的完整流程：
+日常使用只需一个子命令 **run**（一键流水线，端到端出成品）：
+
+    python3 main.py run                 # config/章节/*.md → 成品 Word
+    python3 main.py run 用户论文.docx    # 先拆解用户 Word，再出成品
+
+其余五个是分步原子命令，供单步调试与高级用途（run 在内部编排它们）：
 
   build     把 `章节/*.md` 合成 Word 论文（套用模板骨架）
   convert   把用户撰写的论文 docx 拆解为 `章节/*.md` 格式的 Markdown
@@ -11,6 +16,7 @@
 
 用法：
 
+    python3 main.py run [用户论文.docx] [--template 模板.docx] [--no-fig/--no-toc/--no-audit]
     python3 main.py build [--template 模板.docx]
     python3 main.py convert 用户论文.docx [--strip-front]
     python3 main.py audit [parts styles ...] [--product 成品.docx]
@@ -30,7 +36,10 @@ def main():
     cmd = sys.argv[1]
     rest = sys.argv[2:]
 
-    if cmd == "build":
+    if cmd == "run":
+        from docxflow.cli import main as run_main
+        return run_main(rest) or 0
+    elif cmd == "build":
         from docxbuild.cli import main as build_main
         return build_main(rest) or 0
     elif cmd == "convert":

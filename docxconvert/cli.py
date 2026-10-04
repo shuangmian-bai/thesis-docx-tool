@@ -2,9 +2,13 @@
 
 把用户论文 docx 拆解为 Markdown（与 `章节/*.md` 同格式）+ 图片目录，
 产物可直接喂给 `build_docx.py` 套回模板。
+
+核心流程在 `convert_to()`，命令行入口与一键流水线（docxflow）都调用它，
+区别只在产物落点：命令行默认落 `output/`，流水线直接落 `config/章节/`。
 """
 import argparse
 import os
+from typing import Dict, List, Optional, Tuple
 
 from docxconvert import HERE
 from docxconvert.extract import extract_images
@@ -38,36 +42,33 @@ def _strip_front(blocks):
     return blocks
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(
-        description="把用户撰写的毕业论文 docx 拆解为 章节/*.md 格式的 Markdown。")
-    ap.add_argument("docx", help="用户撰写的论文 Word 文档（.docx）")
-    ap.add_argument("-o", "--output", default=None,
-                    help="输出的 Markdown 路径（默认与 docx 同名 .md，放在论文目录下）")
-    ap.add_argument("--images-dir", default=None,
-                    help="图片输出目录（默认 <md 同名>_images/，与 md 同级）")
-    ap.add_argument("--strip-front", action="store_true",
-                    help="丢弃第一个一级标题之前的内容（封面、摘要等前置页）")
-    args = ap.parse_args(argv)
+def convert_to(docx_path: str, out_md: str, images_dir: str,
+               strip_front: bool = False) -> Tuple[str, str, Dict[str, int]]:
+    """把 docx 拆解为 Markdown 与图片目录（核心流程，不含参数解析）。
 
-    docx_path = os.path.abspath(args.docx)
+    参数：
+        docx_path:   待拆解的 docx 绝对/相对路径。
+        out_md:      Markdown 产物路径（目录不存在会自动创建）。
+        images_dir:  图片抽取目录；md 中的图片路径按相对该 md 的位置改写。
+        strip_front: 是否丢弃第一个以数字开头的一级标题之前的前置块。
+
+    返回：(md 绝对路径, 图片目录绝对路径, 各类块计数)。
+    """
+    docx_path = os.path.abspath(docx_path)
     if not os.path.exists(docx_path):
         raise SystemExit(f"文件不存在：{docx_path}")
 
-    base = os.path.splitext(os.path.basename(docx_path))[0]
-    out_md = args.output or os.path.join(HERE, "output", f"{base}.md")
     out_md = os.path.abspath(out_md)
-    md_dir = os.path.dirname(out_md)
-    images_dir = args.images_dir or os.path.join(md_dir, f"{base}_images")
     images_dir = os.path.abspath(images_dir)
+    md_dir = os.path.dirname(out_md)
 
     blocks, images = parse_docx(docx_path)
     print(f"解析得到 {len(blocks)} 个块，图片 {len(images)} 张")
 
-    written = extract_images(docx_path, images, images_dir)
+    written: Dict[str, str] = extract_images(docx_path, images, images_dir)
     blocks = list(_rewrite_image_paths(blocks, written, md_dir, images_dir))
 
-    if args.strip_front:
+    if strip_front:
         before = len(blocks)
         blocks = _strip_front(blocks)
         print(f"--strip-front：丢弃 {before - len(blocks)} 个前置块")
@@ -81,10 +82,31 @@ def main(argv=None):
     if written:
         print(f"图片 {len(written)} 张 → {os.path.relpath(images_dir, HERE)}/")
     # 各类块计数
-    counts = {}
+    counts: Dict[str, int] = {}
     for blk in blocks:
         counts[blk[0]] = counts.get(blk[0], 0) + 1
     print("块统计：" + " · ".join(f"{k} {v}" for k, v in counts.items()))
+    return out_md, images_dir, counts
+
+
+def main(argv: Optional[List[str]] = None):
+    ap = argparse.ArgumentParser(
+        description="把用户撰写的毕业论文 docx 拆解为 章节/*.md 格式的 Markdown。")
+    ap.add_argument("docx", help="用户撰写的论文 Word 文档（.docx）")
+    ap.add_argument("-o", "--output", default=None,
+                    help="输出的 Markdown 路径（默认与 docx 同名 .md，放在 output/ 下）")
+    ap.add_argument("--images-dir", default=None,
+                    help="图片输出目录（默认 <md 同名>_images/，与 md 同级）")
+    ap.add_argument("--strip-front", action="store_true",
+                    help="丢弃第一个一级标题之前的内容（封面、摘要等前置页）")
+    args = ap.parse_args(argv)
+
+    base = os.path.splitext(os.path.basename(args.docx))[0]
+    out_md = args.output or os.path.join(HERE, "output", f"{base}.md")
+    md_dir = os.path.dirname(os.path.abspath(out_md))
+    images_dir = args.images_dir or os.path.join(md_dir, f"{base}_images")
+
+    convert_to(args.docx, out_md, images_dir, strip_front=args.strip_front)
 
 
 if __name__ == "__main__":
