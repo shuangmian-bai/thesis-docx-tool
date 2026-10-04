@@ -90,14 +90,20 @@ class MainWindow(QMainWindow):
 
     # ---------------- 阶段一：解析 ----------------
     def _start_parse(self, params: dict):
+        # 用 docx 内容哈希创建隔离工作目录，与命令行 run 行为一致，
+        # 避免多个论文共享 config/章节、config/images 造成污染。
+        from docxflow.cli import _file_hash, RUN_WORK_ROOT
+        h = _file_hash(params["docx"])
+        work_dir = os.path.join(RUN_WORK_ROOT, h)
+        os.makedirs(work_dir, exist_ok=True)
         base = os.path.splitext(os.path.basename(params["docx"]))[0]
-        images_dir = os.path.join(IMAGES_ROOT, f"{base}_images")
-        md_target = os.path.join(CHAPTERS_DIR, f"{base}.md")
-        self._cur = {**params, "base": base,
+        images_dir = os.path.join(work_dir, "images")
+        md_target = os.path.join(work_dir, "src.md")
+        self._cur = {**params, "base": base, "work_dir": work_dir,
                      "images_dir": images_dir, "md_target": md_target}
 
         self.statusBar().showMessage("正在解析 Word 并抽取图片...")
-        worker = ParseWorker(params["docx"], images_dir, CONFIG_DIR,
+        worker = ParseWorker(params["docx"], images_dir, work_dir,
                              params["strip_front"])
         self._parse_worker = worker
         worker.finished_blocks.connect(self._on_parsed)
@@ -124,14 +130,17 @@ class MainWindow(QMainWindow):
         blocks = self.review.blocks
         # 章节源的清理与写入统一由应用层 docxflow 负责，
         # GUI 不自行实现，确保与命令行 run 行为等价（出 bug 只修一处）。
+        # 写入哈希工作目录的 章节/ 子目录，避免污染 config/章节/。
         from docxflow.cli import write_chapters_from_blocks
+        work_dir = self._cur.get("work_dir")
+        chap_dir = os.path.join(work_dir, "章节") if work_dir else None
         try:
-            written = write_chapters_from_blocks(blocks)
+            written = write_chapters_from_blocks(blocks, chap_dir=chap_dir)
         except OSError as e:
             QMessageBox.critical(self, "导出失败", f"无法写入章节文件：{e}")
             return
 
-        rel_dir = os.path.relpath(CHAPTERS_DIR, HERE)
+        rel_dir = os.path.relpath(chap_dir or CHAPTERS_DIR, HERE)
         summary = f"{len(written)} 个章节 → {rel_dir}"
         if not do_build:
             QMessageBox.information(
@@ -144,4 +153,4 @@ class MainWindow(QMainWindow):
         self.build_page.reset()
         self.stack.setCurrentIndex(2)
         template = self._cur.get("template") or None
-        self._runner.start(template)
+        self._runner.start(template, work_dir)

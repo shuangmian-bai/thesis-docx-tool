@@ -131,6 +131,11 @@ python3 main.py run 用户论文.docx --force  # 拆解产物已存在、确认�
 在 Word 中按 Ctrl+A 后 F9 即可更新目录；可用 `--no-fig` / `--no-toc` / `--no-audit`
 关闭对应阶段。
 
+**哈希隔离**：Word 路线（`run 用户论文.docx`）会按文件内容 SHA256 前 16 位创建
+隔离工作目录（`.cache/run_work/<hash>/`），拆解产物与中间文件都在里面，多个论文
+互不污染；成品最终仍复制到 `output/`。GUI 导入 Word 同样使用哈希工作目录。
+`run --work-dir <目录>` 可直接从已有工作目录构建（GUI 审阅后构建走此路径）。
+
 路径三（推荐用于别人写的、样式不规范的 Word）：图形界面交互式处理。
 
 ```bash

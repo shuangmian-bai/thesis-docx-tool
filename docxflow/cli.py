@@ -21,6 +21,7 @@
 """
 import argparse
 import datetime
+import hashlib
 import importlib.util
 import os
 import re
@@ -45,6 +46,18 @@ DEFAULT_TEMPLATE = os.path.join(CONFIG_DIR, "template.docx")
 # soffice 使用独立用户配置目录，避免与用户正在运行的 LibreOffice 抢 profile
 LO_PROFILE = "file:///tmp/thesis-docx-tool-lo-profile"
 
+# run 命令的哈希隔离工作根目录（Word 路线与 GUI 共用，防止多论文互相污染）
+RUN_WORK_ROOT = os.path.join(HERE, ".cache", "run_work")
+
+
+def _file_hash(path: str) -> str:
+    """文件 SHA256 前 16 位。"""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()[:16]
+
 
 def _step(title: str) -> None:
     """打印阶段标题。"""
@@ -66,30 +79,48 @@ def clear_old_chapters() -> None:
             os.remove(os.path.join(CHAP_DIR, fn))
 
 
+def write_chapters_from_blocks_to_workdir(md_path: str, work_dir: str) -> None:
+    """把拆解得到的 src.md 复制到工作目录的 章节/ 下，供 build 读取。
+
+    Word 路线下 convert 产出单个 md，build 需要从 章节/ 目录读取数字开头的 .md。
+    这里直接复制为 00_src.md（按数字开头过滤规则会被处理）。
+    """
+    chap_dir = os.path.join(work_dir, "章节")
+    os.makedirs(chap_dir, exist_ok=True)
+    shutil.copy2(md_path, os.path.join(chap_dir, "00_src.md"))
+
+
 def _safe_filename(title: str) -> str:
     """章节标题转合法文件名：去掉路径分隔符等非法字符，空标题回退为「章节」。"""
     name = re.sub(r'[\\/:*?"<>|\r\n]+', "_", title).strip()
     return name or "章节"
 
 
-def write_chapters_from_blocks(blocks) -> List[str]:
-    """把块序列按 H1 拆成多章，写入 config/章节/（先清理旧章节）。
+def write_chapters_from_blocks(blocks, chap_dir: Optional[str] = None) -> List[str]:
+    """把块序列按 H1 拆成多章，写入章节目录（先清理旧章节）。
 
+    chap_dir 为 None 时写入 config/章节/（MD 路线）；
+    传入时写入指定目录（Word 路线/GUI 的哈希工作目录），避免多论文污染。
     GUI 审阅页与命令行 Word 路线统一调用此函数落盘，确保两条路径行为等价。
     返回写入的文件名列表。
     """
     from docxai.blocks_json import split_chapters
     from docxconvert.markdown import render
 
-    clear_old_chapters()
-    os.makedirs(CHAP_DIR, exist_ok=True)
+    target = chap_dir or CHAP_DIR
+    # 清理目标目录下数字开头的旧 md
+    if os.path.isdir(target):
+        for fn in os.listdir(target):
+            if fn.endswith(".md") and fn[:1].isdigit():
+                os.remove(os.path.join(target, fn))
+    os.makedirs(target, exist_ok=True)
     chapters = split_chapters(blocks)
     written = []
     for i, ch in enumerate(chapters, 1):
         ch_blocks = [blocks[idx] for idx in ch["indexes"]]
         title = _safe_filename(ch["title"])
         fn = f"{i:02d}_{title}.md"
-        with open(os.path.join(CHAP_DIR, fn), "w", encoding="utf-8") as fh:
+        with open(os.path.join(target, fn), "w", encoding="utf-8") as fh:
             fh.write(render(ch_blocks))
         written.append(fn)
     return written
@@ -139,15 +170,29 @@ def _fig_stage(no_fig: bool) -> bool:
     return True
 
 
-def _build(template: str) -> str:
-    """跑一遍 build，返回成品 docx 绝对路径。"""
-    from docxbuild.cli import main as build_main
-    build_main(["--template", template])
-    today = datetime.date.today().strftime("%Y%m%d")
-    return os.path.join(OUTPUT_DIR, f"论文_{VERSION}_{today}.docx")
+def _build(template: str, work_dir: Optional[str] = None) -> str:
+    """跑一遍 build，返回成品 docx 绝对路径。
+
+    work_dir 为 None 时走旧的全局目录（MD 路线）；
+    传入时用哈希工作目录（Word 路线），chap_dir/output_dir/toc_pages/images_base
+    都指向工作目录，避免多论文共享 config/章节 造成污染。
+    """
+    from docxbuild.cli import build as build_fn
+    if work_dir:
+        out = build_fn(
+            template=template,
+            chap_dir=os.path.join(work_dir, "章节"),
+            output_dir=os.path.join(work_dir, "output"),
+            toc_pages=os.path.join(work_dir, "toc.json"),
+            images_base=work_dir,
+        )
+    else:
+        out = build_fn(template=template)
+    return out
 
 
-def _toc_stage(product: str, template: str, no_toc: bool) -> bool:
+def _toc_stage(product: str, template: str, no_toc: bool,
+               work_dir: Optional[str] = None) -> bool:
     """自动转 PDF、量页码并第二遍构建。返回是否完成页码回填。"""
     if no_toc:
         print("已跳过目录页码回填（--no-toc）；在 Word 中按 Ctrl+A 后 F9 可更新目录")
@@ -158,10 +203,11 @@ def _toc_stage(product: str, template: str, no_toc: bool) -> bool:
         print("       安装后重跑本命令可自动回填；或在 Word 中按 Ctrl+A 后 F9 更新目录。")
         return False
 
+    out_dir = work_dir or OUTPUT_DIR
     print("正在用 LibreOffice 把成品转为 PDF ...")
     proc = subprocess.run(
         ["soffice", f"-env:UserInstallation={LO_PROFILE}", "--headless",
-         "--convert-to", "pdf", "--outdir", OUTPUT_DIR, product],
+         "--convert-to", "pdf", "--outdir", out_dir, product],
         capture_output=True, text=True, timeout=300)
     pdf = os.path.splitext(product)[0] + ".pdf"
     if proc.returncode != 0 or not os.path.exists(pdf):
@@ -172,10 +218,7 @@ def _toc_stage(product: str, template: str, no_toc: bool) -> bool:
     toc_main([pdf])
 
     print("页码表已生成，第二遍构建以回填目录 ...")
-    # 第二遍产物路径与第一遍相同（版本号+日期），直接覆盖占位目录版本
-    from docxbuild.cli import main as build_main
-    build_main(["--template", template])
-    return True
+    return _build(template, work_dir) is not None
 
 
 def _audit_stage(product: str, template: str, template_explicit: bool) -> None:
@@ -218,6 +261,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--no-fig", action="store_true", help="跳过架构图渲染")
     ap.add_argument("--no-toc", action="store_true", help="跳过目录页码自动回填（不转 PDF）")
     ap.add_argument("--no-audit", action="store_true", help="跳过成品格式审计")
+    ap.add_argument("--work-dir", default=None,
+                    help="指定哈希工作目录（GUI 审阅后构建用，跳过 convert，"
+                         "直接从该目录的 章节/ 构建）")
     args = ap.parse_args(argv)
 
     # 区分「未传 --template」与「显式指定」：默认模板走 audit 预期偏离表，
@@ -225,13 +271,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     template_explicit = args.template is not None
     template = os.path.abspath(args.template) if args.template else DEFAULT_TEMPLATE
 
-    # Word 路线的拆解落点：章节源与图片都归 config/，build 以 config/ 为根解析图片相对路径
+    # 工作目录优先级：--work-dir（GUI 审阅后构建）> docx 哈希（Word 路线）> None（MD 路线）
+    work_dir = args.work_dir
     md_target = None
     images_dir = None
-    if args.docx:
-        base = os.path.splitext(os.path.basename(args.docx))[0]
-        md_target = os.path.join(CHAP_DIR, f"{base}.md")
-        images_dir = os.path.join(CONFIG_IMAGES, f"{base}_images")
+    if args.docx and not work_dir:
+        h = _file_hash(args.docx)
+        work_dir = os.path.join(RUN_WORK_ROOT, h)
+        os.makedirs(work_dir, exist_ok=True)
+        md_target = os.path.join(work_dir, "src.md")
+        images_dir = os.path.join(work_dir, "images")
+        print(f"工作目录（哈希隔离）：{os.path.relpath(work_dir, HERE)}")
+    elif work_dir:
+        print(f"工作目录（指定）：{os.path.relpath(work_dir, HERE)}")
 
     _step("阶段 · 开工前检查")
     _precheck(template, bool(args.docx), md_target, args.force)
@@ -239,28 +291,35 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.docx:
         _step("阶段 · 拆解用户 Word 为章节 Markdown")
-        # 先清理旧章节源，避免与本次拆解产物混杂（应用层统一入口）
-        clear_old_chapters()
-        # rel_base 传 config/：图片引用写成 images/<名>_images/x.png，
-        # 与 build 以 config/ 为基准的图片解析、手写章节的引用约定保持一致
+        # rel_base 传 work_dir：图片引用写成 images/x.png，
+        # build 时 images_base=work_dir，与工作目录结构匹配
         convert_to(args.docx, md_target, images_dir,
-                   strip_front=not args.keep_front, rel_base=CONFIG_DIR)
+                   strip_front=not args.keep_front, rel_base=work_dir)
+        # 把拆解产物按章节拆分写入工作目录的 章节/ 子目录
+        write_chapters_from_blocks_to_workdir(md_target, work_dir)
 
     _step("阶段 · 架构图渲染")
     _fig_stage(args.no_fig)
 
     _step("阶段 · 构建 Word（第一遍）")
-    product = _build(template)
+    product = _build(template, work_dir)
 
     _step("阶段 · 目录页码回填")
-    _toc_stage(product, template, args.no_toc)
+    _toc_stage(product, template, args.no_toc, work_dir)
 
     if not args.no_audit:
         _audit_stage(product, template, template_explicit)
 
+    # Word 路线 / GUI 审阅后构建：把成品从工作目录复制到 output/，方便用户取用
+    if work_dir and os.path.exists(product):
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        final = os.path.join(OUTPUT_DIR, os.path.basename(product))
+        shutil.copy2(product, final)
+        product = final
+
     _step("完成")
     print(f"成品：{os.path.relpath(product, HERE)}")
     if args.docx:
-        print("拆解得到的章节 Markdown 在 config/章节/ 中，可直接修改，"
-              "之后重跑 `python3 main.py run`（不带 docx）即可重新出稿。")
+        print(f"拆解产物在工作目录 {os.path.relpath(work_dir, HERE)} 中，"
+              "修改后重跑 `python3 main.py run`（不带 docx）或用哈希重跑即可。")
     return 0
