@@ -63,9 +63,22 @@ def main(argv=None):
 
     if not os.path.isdir(CHAP_DIR):
         raise SystemExit(f"找不到章节目录：{os.path.relpath(CHAP_DIR, HERE)}（请在该目录下放 *.md）")
-    chapters = sorted(f for f in os.listdir(CHAP_DIR) if f.endswith(".md"))
-    if not chapters:
+    all_md = sorted(f for f in os.listdir(CHAP_DIR) if f.endswith(".md"))
+    if not all_md:
         raise SystemExit("章节目录里没有 .md 文件")
+    # 章节文件约定以数字开头（如 01_设计思路.md）。若存在此类文件，只处理它们，
+    # 跳过模板示例、整篇拆解产物等非章节文件，避免正文被重复构建。
+    # 目录里全是非数字开头的文件时（如审阅页导出的单篇论文 md），退化为全量处理。
+    numbered = [f for f in all_md if f[:1].isdigit()]
+    if numbered:
+        skipped = [f for f in all_md if not f[:1].isdigit()]
+        if skipped:
+            print(f"  注意：章节目录下有 {len(skipped)} 个非章节文件已跳过"
+                  f"（章节文件名需以数字开头，如 01_设计思路.md）："
+                  + "、".join(skipped))
+        chapters = numbered
+    else:
+        chapters = all_md
 
     # ── 1. 合并 Markdown，供版本管理与比对 ──
     merged = []

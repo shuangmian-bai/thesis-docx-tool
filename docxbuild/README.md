@@ -77,3 +77,7 @@ main(["--template", "template.docx"])   # 等价于 python3 main.py build --temp
 - `tplinspect.py` 只读模板 zip，不修改模板本体；封面字段/签名图的修复写
   `config/cover.json` 与 `config/images/signature.png`。骨架与样式问题只
   报告，由用户在 Word 中改模板后重新检测复验。
+- 章节源过滤：`cli.py` 只把 `config/章节/` 下**文件名以数字开头**的 `.md`
+  当作章节处理（如 `01_设计思路.md`），其余文件跳过并打印警告，防止把模板
+  示例、整篇拆解产物等非章节文件混进来导致正文重复构建。目录里全是非数字
+  开头文件时（如 GUI 审阅页导出的单篇论文 md）退化为全量处理。
