@@ -44,5 +44,8 @@ Thumbs.db
 /CLAUDE.md
 
 
+config/cover.example.json
+config/ai.example.json
+
 # 虚拟环境目录
 **/*venv*/**

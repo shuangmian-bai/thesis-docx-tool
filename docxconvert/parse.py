@@ -253,7 +253,8 @@ def parse_docx(docx_path):
             elif sid in caption_ids or _CAPTION_RE.match(text):
                 blocks.append(("caption", text))
             elif _REF_RE.match(text):
-                blocks.append(("ref", text))
+                # 参考文献保留原始空格（[J] 前双空格等排版习惯）
+                blocks.append(("ref", _para_text(child, preserve_ws=True)))
             else:
                 blocks.append(("p", text))
 

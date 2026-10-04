@@ -23,6 +23,7 @@ import argparse
 import datetime
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 from typing import List, Optional
@@ -48,6 +49,50 @@ LO_PROFILE = "file:///tmp/thesis-docx-tool-lo-profile"
 def _step(title: str) -> None:
     """打印阶段标题。"""
     print(f"\n{'=' * 30} {title} {'=' * 30}")
+
+
+# ── 应用层：章节源准备（清理 + 写入），命令行与 GUI 共用 ──
+
+def clear_old_chapters() -> None:
+    """清理 config/章节/ 下所有数字开头的 .md 文件，避免新旧章节混杂。
+
+    非数字开头的文件（如模板示例、整篇拆解产物）不动，由 build 自行跳过。
+    本函数是应用层唯一的章节清理入口，出 bug 只修此处。
+    """
+    if not os.path.isdir(CHAP_DIR):
+        return
+    for fn in os.listdir(CHAP_DIR):
+        if fn.endswith(".md") and fn[:1].isdigit():
+            os.remove(os.path.join(CHAP_DIR, fn))
+
+
+def _safe_filename(title: str) -> str:
+    """章节标题转合法文件名：去掉路径分隔符等非法字符，空标题回退为「章节」。"""
+    name = re.sub(r'[\\/:*?"<>|\r\n]+', "_", title).strip()
+    return name or "章节"
+
+
+def write_chapters_from_blocks(blocks) -> List[str]:
+    """把块序列按 H1 拆成多章，写入 config/章节/（先清理旧章节）。
+
+    GUI 审阅页与命令行 Word 路线统一调用此函数落盘，确保两条路径行为等价。
+    返回写入的文件名列表。
+    """
+    from docxai.blocks_json import split_chapters
+    from docxconvert.markdown import render
+
+    clear_old_chapters()
+    os.makedirs(CHAP_DIR, exist_ok=True)
+    chapters = split_chapters(blocks)
+    written = []
+    for i, ch in enumerate(chapters, 1):
+        ch_blocks = [blocks[idx] for idx in ch["indexes"]]
+        title = _safe_filename(ch["title"])
+        fn = f"{i:02d}_{title}.md"
+        with open(os.path.join(CHAP_DIR, fn), "w", encoding="utf-8") as fh:
+            fh.write(render(ch_blocks))
+        written.append(fn)
+    return written
 
 
 def _precheck(template: str, have_docx: bool, md_target: Optional[str],
@@ -194,6 +239,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.docx:
         _step("阶段 · 拆解用户 Word 为章节 Markdown")
+        # 先清理旧章节源，避免与本次拆解产物混杂（应用层统一入口）
+        clear_old_chapters()
         # rel_base 传 config/：图片引用写成 images/<名>_images/x.png，
         # 与 build 以 config/ 为基准的图片解析、手写章节的引用约定保持一致
         convert_to(args.docx, md_target, images_dir,
