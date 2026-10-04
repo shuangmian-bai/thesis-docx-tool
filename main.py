@@ -6,17 +6,20 @@
     python3 main.py run                 # config/章节/*.md → 成品 Word
     python3 main.py run 用户论文.docx    # 先拆解用户 Word，再出成品
 
-其余五个是分步原子命令，供单步调试与高级用途（run 在内部编排它们）：
+其余六个是分步原子命令/图形入口，供单步调试、高级用途与交互式处理：
 
   build     把 `章节/*.md` 合成 Word 论文（套用模板骨架）
   convert   把用户撰写的论文 docx 拆解为 `章节/*.md` 格式的 Markdown
   audit     审计成品 docx 是否贴合模板格式
   toc       从渲染出的 PDF 反查标题页码，写入 `toc_pages.json`
   fig       从 `config/figures/*.md` 生成论文架构图（内容与样式分离）
+  gui       PyQt6 图形界面：选 docx 与处理模式（默认/AI）→ 审阅扁平化结果
+            → 手动或 AI 修正 → 一键 run 出稿（gui 需先 pip install -r requirements.txt 装 PyQt6）
 
 用法：
 
     python3 main.py run [用户论文.docx] [--template 模板.docx] [--no-fig/--no-toc/--no-audit]
+    python3 main.py gui
     python3 main.py build [--template 模板.docx]
     python3 main.py convert 用户论文.docx [--strip-front]
     python3 main.py audit [parts styles ...] [--product 成品.docx]
@@ -54,6 +57,9 @@ def main():
     elif cmd == "fig":
         from docxfig.cli import main as fig_main
         return fig_main(rest) or 0
+    elif cmd == "gui":
+        from docxgui.app import main as gui_main
+        return gui_main(rest)
     else:
         print(f"未知子命令：{cmd}", file=sys.stderr)
         print(__doc__, file=sys.stderr)

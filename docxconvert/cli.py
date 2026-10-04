@@ -47,6 +47,50 @@ def _strip_front(blocks):
     return blocks
 
 
+def prepare_blocks(docx_path: str, images_dir: str, *,
+                   strip_front: bool = False,
+                   rel_base: Optional[str] = None,
+                   quiet: bool = False
+                   ) -> Tuple[list, str, Dict[str, str]]:
+    """解析 docx、抽取图片并改写图片引用路径，但不写 Markdown 文件。
+
+    供 convert_to() 与 GUI 审阅流程共用：GUI 需要先拿到块供人工/AI 校对，
+    Markdown 在用户确认后才落盘。
+
+    参数：
+        docx_path:   待拆解的 docx。
+        images_dir:  图片抽取目录（自动创建）。
+        strip_front: 是否丢弃第一个以数字开头的一级标题之前的前置块。
+        rel_base:    图片引用路径的计算基准目录；产物要喂给 build 时传
+                     `config/`（引用写成 images/xxx.png）；None 时按 images_dir
+                     的父目录计算（独立 convert 的原行为）。
+        quiet:       静默（GUI 用），不打印过程信息。
+
+    返回：(blocks, images_dir 绝对路径, written {zip路径: 落盘文件名})。
+    """
+    docx_path = os.path.abspath(docx_path)
+    if not os.path.exists(docx_path):
+        raise SystemExit(f"文件不存在：{docx_path}")
+
+    images_dir = os.path.abspath(images_dir)
+    rel_base = os.path.abspath(rel_base) if rel_base \
+        else os.path.dirname(images_dir)
+
+    blocks, images = parse_docx(docx_path)
+    if not quiet:
+        print(f"解析得到 {len(blocks)} 个块，图片 {len(images)} 张")
+
+    written: Dict[str, str] = extract_images(docx_path, images, images_dir)
+    blocks = list(_rewrite_image_paths(blocks, written, rel_base, images_dir))
+
+    if strip_front:
+        before = len(blocks)
+        blocks = _strip_front(blocks)
+        if not quiet:
+            print(f"--strip-front：丢弃 {before - len(blocks)} 个前置块")
+    return blocks, images_dir, written
+
+
 def convert_to(docx_path: str, out_md: str, images_dir: str,
                strip_front: bool = False,
                rel_base: Optional[str] = None
@@ -65,25 +109,10 @@ def convert_to(docx_path: str, out_md: str, images_dir: str,
 
     返回：(md 绝对路径, 图片目录绝对路径, 各类块计数)。
     """
-    docx_path = os.path.abspath(docx_path)
-    if not os.path.exists(docx_path):
-        raise SystemExit(f"文件不存在：{docx_path}")
+    blocks, images_dir, written = prepare_blocks(
+        docx_path, images_dir, strip_front=strip_front, rel_base=rel_base)
 
     out_md = os.path.abspath(out_md)
-    images_dir = os.path.abspath(images_dir)
-    rel_base = os.path.abspath(rel_base) if rel_base else os.path.dirname(out_md)
-
-    blocks, images = parse_docx(docx_path)
-    print(f"解析得到 {len(blocks)} 个块，图片 {len(images)} 张")
-
-    written: Dict[str, str] = extract_images(docx_path, images, images_dir)
-    blocks = list(_rewrite_image_paths(blocks, written, rel_base, images_dir))
-
-    if strip_front:
-        before = len(blocks)
-        blocks = _strip_front(blocks)
-        print(f"--strip-front：丢弃 {before - len(blocks)} 个前置块")
-
     md = render(blocks)
     os.makedirs(os.path.dirname(out_md), exist_ok=True)
     with open(out_md, "w", encoding="utf-8") as fh:

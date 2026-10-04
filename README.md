@@ -5,6 +5,11 @@
 - **run**：一键流水线。自动串联 拆解（可选）→ 架构图 → 构建 → 转 PDF 量目录页码 → 二次构建 → 格式审计，
   支持两条路径：直接写 Markdown，或传入已写好的 Word 自动拆解后重排。
 
+另有 **gui** 图形界面（run 的交互前端）：选 Word 与处理模式（默认/AI），
+在界面里审阅扁平化结果、手动或让 AI 修正后一键出稿，适合解析别人样式混乱的 Word：
+
+- **gui**：PyQt6 三页向导（选择 → 审阅修正 → 构建），AI 能力由 `docxai/` 提供
+
 其余五个是分步原子命令，供单步调试与高级用途（run 在内部编排它们）：
 
 - **build**：把按章拆分的 Markdown（`章节/*.md`）套用学校论文模板骨架，生成符合格式的 Word 论文
@@ -13,17 +18,24 @@
 - **toc**：从渲染出的 PDF 反查目录页码，回填 TOC 域
 - **fig**：把 `figures/*.md` 中用表格 DSL 描述的架构图渲染为 PNG，供 build 嵌入
 
-依赖仅 Python 标准库（`zipfile` / `xml.etree` / `re` / `json` / `subprocess`），
-**不用 python-docx、不用 pandoc**。`build` 的插图尺寸计算可选 `Pillow`，无图时可缺省；
-`fig` 子命令需要 `Pillow` 渲染 PNG。
+命令行核心仅依赖 Python 标准库（`zipfile` / `xml.etree` / `re` / `json` /
+`subprocess` / `urllib`），**不用 python-docx、不用 pandoc、不用任何 AI SDK**。
+`build` 的插图尺寸计算可选 `Pillow`，无图时可缺省；`fig` 子命令需要 `Pillow`；
+`gui` 子命令需要 PyQt6（见下）。
 
 ## 安装
 
 ```bash
 git clone <你的仓库地址>
 cd thesis-docx-tool
-pip install -r requirements.txt   # 仅 Pillow；只用 build/convert/audit/toc 且无插图时可跳过
+pip install -r requirements.txt
 ```
+
+一条命令装齐全部第三方依赖（仅两个：Pillow、PyQt6）。各模式需要的模块：
+
+- `run` / `build` / `convert` / `audit` / `toc` 以及 AI 核心（docxai）：**纯标准库**，零第三方模块；
+- `fig`：需要 Pillow（`build` 的插图尺寸计算也可选 Pillow，缺失时回退默认尺寸）；
+- `gui`：需要 PyQt6（AI 调用本身只用标准库 urllib，不需要任何 AI SDK）。
 
 ## 快速开始
 
@@ -63,6 +75,20 @@ python3 main.py run 用户论文.docx --force  # 拆解产物已存在、确认�
 本机没有 LibreOffice（`soffice`）或 `pdftotext` 时，页码回填自动跳过、照常出稿，
 在 Word 中按 Ctrl+A 后 F9 即可更新目录；可用 `--no-fig` / `--no-toc` / `--no-audit`
 关闭对应阶段。
+
+路径三（推荐用于别人写的、样式不规范的 Word）：图形界面交互式处理。
+
+```bash
+python3 main.py gui
+```
+
+向导中选择 docx 与处理模式——**默认模式**直接按样式规则解析（离线零成本），
+**AI 模式**在规则解析后自动按章调 AI 修正结构分类；进入审阅页后可按章/类型展开
+纯文本块列表，手动改正文、标题级别、表格、图题，或选中块让 AI 按指令改写，
+AI 改动均可逐块还原。确认结构无误后点「确认并生成 Word」，界面自动执行 run
+并实时显示日志。首次使用 AI 模式请在菜单「设置 → AI 配置」填写服务商与 API Key
+（支持 DeepSeek、豆包火山方舟、通义千问、OpenAI 及任意 OpenAI 兼容接口，
+配置保存在不入库的 `config/ai.json`）。
 
 ### 高级：分步命令
 
@@ -147,6 +173,19 @@ python3 main.py fig [图名]
   配色、字体、圆角、箭头等视觉样式由 `docxfig/render.py` 统一决定。
 - 详细语法见 `docxfig/README.md`。
 
+### gui（图形界面）
+
+```
+python3 main.py gui
+```
+
+- 需要 PyQt6（含在 `requirements.txt` 中）；未安装时命令给出安装提示。
+- 三页向导：选择 docx/处理模式/模板 → 审阅与修正块序列（手动编辑 + AI 修正）
+  → 导出 `config/章节/<名>.md` 并自动执行 run，日志实时显示、可终止。
+- AI 配置在菜单「设置 → AI 配置」，保存在 `config/ai.json`（不入库）；
+  AI 只修正结构不改实质内容，每批返回过块数/schema/图片路径三重校验，
+  不过整批保留原文。详见 `docxgui/README.md` 与 `docxai/README.md`。
+
 ## 块模型（build 与 convert 共用）
 
 `docxbuild.mdparse.parse_md()` 与 `docxconvert.parse.parse_docx()` 共用同一套块格式，
@@ -173,7 +212,9 @@ python3 main.py fig [图名]
 ```
 main.py  ── 统一入口，按子命令分发
   │
-  ├─ run     → docxflow/    （一键流水线，编排下面四个模块，面向用户的主入口）
+  ├─ run     → docxflow/    （一键流水线，编排下面四个模块，命令行主入口）
+  ├─ gui     → docxgui/     （PyQt6 界面，审阅/修正后经外部进程执行 run）
+  │             └─ docxai/  （AI 结构修正/内容改写核心，纯标准库，GUI 与终端版共用）
   ├─ build   → docxbuild/   （Markdown → docx + 目录页码回填）
   ├─ convert → docxconvert/ （docx → Markdown）
   ├─ audit   → docxaudit/   （docx 格式审计）
@@ -245,9 +286,38 @@ main.py  ── 统一入口，按子命令分发
 | `parser` | 解析 `figures/*.md` 的表格 DSL（canvas + 元素表） |
 | `cli` | 主流程编排（`generate(name)` → 输出 PNG 到 `config/images/`） |
 
-**内容与样式分离**：DSL 只描述内容（画什么、坐标、尺寸、文本、语义色名），
+**内容与样式分离**：DSL 只描述内容（画什么、坐标、尺寸、文本、语义色），
 配色、字体、圆角、箭头等视觉样式集中在 `render.py` 的常量中，改样式只动代码。
 DSL 语法见 `docxfig/README.md`。
+
+### docxai/ —— AI 结构修正与内容改写核心
+
+| 模块 | 职责 |
+|---|---|
+| `config` | `config/ai.json` 读写与 provider 预设（DeepSeek/豆包/通义/OpenAI/自定义） |
+| `client` | OpenAI 兼容 `chat/completions` 客户端（urllib）：超时、429/5xx 重试、错误脱敏 |
+| `blocks_json` | 块 tuple ↔ dict/JSON 边界：转换、schema 校验、AI 返回解析、按 H1 分章 |
+| `prompts` | 结构修正/内容改写提示词 |
+| `correct` | 按章分批结构修正、单段内容改写编排（校验不过整批保留原文） |
+
+**规则打底 + AI 修正**：规则解析永远先跑出完整结果，AI 只按章修结构，
+块数不一致、schema 非法、图片路径越界的返回一律整批拒绝，保证内容零丢失。
+纯标准库、无 Qt 依赖，GUI 与后续终端交互版共用。详见 `docxai/README.md`。
+
+### docxgui/ —— PyQt6 图形界面
+
+| 模块 | 职责 |
+|---|---|
+| `app` | 入口与 PyQt6 延迟导入（缺失给安装提示） |
+| `main_window` | 三页编排、菜单、状态栏 |
+| `wizard_page` | docx/模式（默认/AI）/模板选择 |
+| `review_page` | 分类块树、各类型块编辑器、AI 修正/改写、逐块还原 |
+| `blocks_model` | 类型标签与摘要（无 Qt 依赖） |
+| `settings_dialog` | AI 配置弹窗（预设、掩码、连接测试） |
+| `workers` | QThread（解析/AI）与 QProcess（外部 run） |
+
+构建阶段由外部进程执行 `python3 main.py run`，界面不重写流水线。
+详见 `docxgui/README.md`。
 
 ## 数据流闭环
 
@@ -268,14 +338,17 @@ config/figures/*.md ──fig──▶ config/images/*.png                   │
 
 | 依赖 | 用途 | 是否必需 |
 |---|---|---|
-| Python 3.8+ | 运行环境 | 必需 |
+| Python 3.8+ | 命令行运行环境 | 必需（gui 建议 3.9+） |
 | Pillow | build 时计算插图显示尺寸；fig 时渲染架构图 PNG | fig 必需，build 无图可缺省 |
+| PyQt6 | gui 图形界面（docxai AI 核心不需要） | 仅 gui 模式必需 |
 | LibreOffice (`soffice`) | docx 转 PDF（量目录页码用） | 量页码时必需 |
 | poppler-utils (`pdftotext`) | 从 PDF 提取文本量页码 | 量页码时必需 |
+| OpenAI 兼容大模型 API | gui 的 AI 模式/AI 改写（DeepSeek/豆包/通义/OpenAI 等） | 仅 AI 功能必需 |
 
 ## 常见问题
 
 - **build 报找不到模板**：把模板放到 `config/template.docx` 或用 `--template` 指定。
 - **build 报找不到签名图**：在 `config/images/signature.png` 放签名图，或从 `config/cover.json`/模板调整。
 - **convert 后标题层级不对**：用户 docx 的标题样式可能不是模板的 `1`/`2`/`3`/`4`，
-  工具会尝试匹配 `Heading 1` 等常见样式名；匹配不到的当正文处理，可手工调整 MD。
+  工具会尝试匹配 `Heading 1` 等常见样式名；匹配不到的当正文处理。
+  可用 `python3 main.py gui` 选 AI 模式自动修正结构，或在审阅页手动调整后再出稿。
