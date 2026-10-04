@@ -4,14 +4,14 @@
 OpenAI 兼容的 `/chat/completions` 接口，故配置只需 provider、base_url、
 api_key、model 四项核心参数 + 超时，客户端一份实现通用。
 
-真实配置写在 config/ai.json（.gitignore 排除，不入库），
-config/ai.example.json 是不含 key 的入库示例。
+真实配置写在 config/ai.json（.gitignore 排除，不入库）；
+默认配置由 default_for(provider) 生成，可在 GUI「设置→AI 配置」中填写。
 """
 import json
 import os
 from typing import Dict, Optional
 
-from docxai import AI_CONFIG, AI_CONFIG_EXAMPLE, HERE
+from docxai import AI_CONFIG, HERE
 
 #: provider 预设：选 provider 后自动带出 base_url 与默认 model；
 #: 豆包/自定义的 model 通常是部署端点 ID，需用户自行填写，故留空占位
@@ -77,8 +77,7 @@ def load() -> Dict[str, object]:
     if not os.path.exists(AI_CONFIG):
         raise ConfigError(
             f"未找到 AI 配置：{os.path.relpath(AI_CONFIG, HERE)}，"
-            f"可在 GUI「设置→AI 配置」中填写，或复制 "
-            f"{os.path.basename(AI_CONFIG_EXAMPLE)} 为 ai.json 后填写")
+            f"请在 GUI「设置→AI 配置」中填写")
     try:
         with open(AI_CONFIG, encoding="utf-8") as fh:
             cfg = json.load(fh)

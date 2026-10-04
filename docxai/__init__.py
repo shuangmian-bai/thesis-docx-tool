@@ -13,6 +13,5 @@ import os
 #: 工具根目录（thesis-docx-tool/）
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-#: AI 配置文件（个人数据，.gitignore 排除）与入库示例
+#: AI 配置文件（个人数据，.gitignore 排除）；默认值由 config.default_for() 生成
 AI_CONFIG = os.path.join(HERE, "config", "ai.json")
-AI_CONFIG_EXAMPLE = os.path.join(HERE, "config", "ai.example.json")

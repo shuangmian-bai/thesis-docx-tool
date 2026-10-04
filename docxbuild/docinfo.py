@@ -5,8 +5,8 @@
 定位诚信承诺书里的示例题目；`cli.main()` 用 `TITLE` 与 `COVER["学生姓名"]` 写
 `docProps/core.xml`。
 
-开源版本**不含任何个人数据**：所有字段默认为占位符，真实信息由使用者在 `cover.json`
-里填写（`cover.example.json` 是模板）。`cover.json` 已被 `.gitignore` 排除，不会入库。
+开源版本**不含任何个人数据**：所有字段默认为占位符，真实信息由使用者在
+`config/cover.json` 里填写（`.gitignore` 排除，不入库）。
 """
 import json
 import os

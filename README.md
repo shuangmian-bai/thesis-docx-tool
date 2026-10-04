@@ -96,8 +96,7 @@ pip install -r requirements.txt
 # 学校论文模板放到 config/，命名为 template.docx（不入库）
 cp /path/to/学校论文模板.docx config/template.docx
 
-# 封面信息：复制示例后填写真实信息（cover.json 不入库）
-cp config/cover.example.json config/cover.json
+# 封面信息：直接编辑 config/cover.json（不入库；缺省用 docxbuild/docinfo.py 的占位符）
 # 编辑 config/cover.json，填入题目、姓名、学号等
 
 # 承诺书签名图放到 config/images/signature.png（自备，不入库）

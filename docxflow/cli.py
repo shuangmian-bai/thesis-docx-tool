@@ -119,7 +119,7 @@ def _precheck(template: str, have_docx: bool, md_target: Optional[str],
     # cover.json 缺失不阻断：占位符也能出稿，只是封面字段待填
     if not os.path.exists(COVER_JSON):
         print("[注意] config/cover.json 不存在，封面字段将使用占位符"
-              "（可复制 config/cover.example.json 后填写）")
+              "（可在 GUI 模板预览页或直接编辑该文件填写）")
 
 
 def _fig_stage(no_fig: bool) -> bool:

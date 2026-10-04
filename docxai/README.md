@@ -21,7 +21,8 @@ GUI（`docxgui`）与后续的终端交互版都调用本包，同一套 AI 逻�
 
 ## 配置
 
-`config/ai.example.json`（入库示例）复制为 `config/ai.json`（不入库）后填写：
+在 `config/ai.json`（不入库）中填写，或在 GUI「设置→AI 配置」中操作；
+缺省配置由 `docxai/config.py` 的 `default_for(provider)` 生成：
 
 ```json
 {
