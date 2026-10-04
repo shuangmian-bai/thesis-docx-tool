@@ -64,3 +64,9 @@ convert_to("用户论文.docx", "config/章节/用户论文.md",
 - 用户 docx 的标题样式可能不是模板的 `1`/`2`/`3`/`4`，工具会尝试匹配 `Heading 1` 等
   常见样式名；匹配不到的当正文处理，可手工调整 MD。
 - 新增块类型需同步改 `docxbuild` 的 `mdparse.py` / `fragments.py`，保持闭环。
+- **段落内软换行 `<w:br>`**：转成空格（Markdown 无段落内换行概念，避免段落边界
+  被拆散破坏闭环）。
+- **空格归一化**：非代码段落的连续空格合并为单空格；代码块（样式 `code`）通过
+  `preserve_ws=True` 保留原始缩进。
+- **表格单元格多段**：用 `\n` 连接，`docxconvert.markdown` 渲染为 `<br>`，
+  `docxbuild.fragments.table_xml` 拆成多个 `<w:p>` 还原。
