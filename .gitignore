@@ -39,3 +39,7 @@ Thumbs.db
 .toc_pass*.json
 .toc_prev.json
 /CLAUDE.md
+
+
+# 虚拟环境目录
+**/*venv*/**
