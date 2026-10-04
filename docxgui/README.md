@@ -34,8 +34,9 @@ python3 main.py gui
    - AI 操作：整篇结构修正（按章分批、进度可取消）、单块按指令改写，
      AI 改动标记 `[AI 已改]` 且可逐块「还原」；
    - 确认前一切修改只在内存，不落盘。
-3. **构建页 `build_page.py`**：确认后块序列写成 `config/章节/<docx名>.md`
-   （图片在解析阶段已抽签到 `config/images/<docx名>_images/`），随后
+3. **构建页 `build_page.py`**：确认后块序列按 H1 拆成多章，写成
+   `config/章节/NN_章节标题.md`（数字开头，写入前清理旧分章文件，
+   图片在解析阶段已抽签到 `config/images/<docx名>_images/`），随后
    QProcess 执行 `python3 main.py run [--template ...]`，日志实时滚动、
    可终止，结束后可打开 output 目录。
 

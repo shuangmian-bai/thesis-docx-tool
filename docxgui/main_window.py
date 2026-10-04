@@ -2,7 +2,7 @@
 
 主窗口只做编排与页面间数据传递：
 - 解析/AI/构建均由 workers 后台执行，本类不写业务逻辑；
-- 审阅确认后把块 render 成 config/章节/<docx名>.md（run 的既定落点），
+- 审阅确认后把块按 H1 拆成数字开头的分章 md 写入 config/章节/（清理旧分章），
   再由外部进程 `python3 main.py run` 完成全部后续阶段。
 """
 import os
@@ -11,7 +11,10 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (QMainWindow, QMessageBox, QStackedWidget,
                              QStatusBar)
 
+import re
+
 from docxai import HERE
+from docxai.blocks_json import split_chapters
 from docxconvert.markdown import render
 from docxgui.build_page import BuildPage
 from docxgui.review_page import ReviewPage
@@ -122,25 +125,45 @@ class MainWindow(QMainWindow):
 
     # ---------------- 阶段二：确认导出 ----------------
     def _confirm(self, do_build: bool):
-        md_target = self._cur["md_target"]
+        blocks = self.review.blocks
+        # 按 H1 拆成多章，分别写成数字开头的分章 md，写入前清理旧分章文件，
+        # 确保 build 只用本次审阅修正后的内容，不会与历史章节混在一起。
+        chapters = split_chapters(blocks)
         try:
-            os.makedirs(os.path.dirname(md_target), exist_ok=True)
-            with open(md_target, "w", encoding="utf-8") as fh:
-                fh.write(render(self.review.blocks))
+            os.makedirs(CHAPTERS_DIR, exist_ok=True)
+            # 清理旧的数字开头章节文件（非数字开头的如模板示例不动，由 build 自行跳过）
+            for fn in os.listdir(CHAPTERS_DIR):
+                if fn.endswith(".md") and fn[:1].isdigit():
+                    os.remove(os.path.join(CHAPTERS_DIR, fn))
+            written = []
+            for i, ch in enumerate(chapters, 1):
+                ch_blocks = [blocks[idx] for idx in ch["indexes"]]
+                title = self._safe_filename(ch["title"])
+                fn = f"{i:02d}_{title}.md"
+                with open(os.path.join(CHAPTERS_DIR, fn), "w", encoding="utf-8") as fh:
+                    fh.write(render(ch_blocks))
+                written.append(fn)
         except OSError as e:
-            QMessageBox.critical(self, "导出失败", f"无法写入 {md_target}：{e}")
+            QMessageBox.critical(self, "导出失败", f"无法写入章节文件：{e}")
             return
 
-        rel_md = os.path.relpath(md_target, HERE)
+        rel_dir = os.path.relpath(CHAPTERS_DIR, HERE)
+        summary = f"{len(written)} 个章节 → {rel_dir}"
         if not do_build:
             QMessageBox.information(
                 self, "已导出",
-                f"Markdown 已写入：{rel_md}\n可自行运行 python3 main.py run 出稿")
-            self.statusBar().showMessage(f"已导出 {rel_md}")
+                f"已写入 {summary}\n可自行运行 python3 main.py run 出稿")
+            self.statusBar().showMessage(f"已导出 {summary}")
             return
 
-        self.statusBar().showMessage(f"已导出 {rel_md}，开始 run 构建...")
+        self.statusBar().showMessage(f"已导出 {summary}，开始 run 构建...")
         self.build_page.reset()
         self.stack.setCurrentIndex(2)
         template = self._cur.get("template") or None
         self._runner.start(template)
+
+    @staticmethod
+    def _safe_filename(title: str) -> str:
+        """把章节标题转成合法文件名：去掉路径分隔符等非法字符，空标题回退为“章节”。"""
+        name = re.sub(r'[\\/:*?"<>|\r\n]+', "_", title).strip()
+        return name or "章节"
