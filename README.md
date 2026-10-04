@@ -406,6 +406,47 @@ config/figures/*.md ──fig──▶ config/images/*.png                   │
 
 `build` 与 `convert` 共用块模型，已验证 Markdown → docx → Markdown 块级无损。
 
+## 验证与回归测试（规范）
+
+扁平化（`convert`：Word → 块）与渲染引擎（`build`：块 → Word）的正确性，
+统一用**现成模板 docx 走闭环对比**来验证，不靠肉眼看输出：
+
+**测试步骤**：
+
+1. 取一个内容完整的 docx 作为输入（推荐直接用 `config/template.docx` 或任意
+   已写好的论文 docx），记为 `输入.docx`。
+2. 拆解：`python3 main.py convert 输入.docx --strip-front`，产物落 `output/`，
+   得到 `输入.md` 与抽取的图片。
+3. 用拆解产物出稿：把 `输入.md` 放入 `config/章节/`（确保文件名以数字开头），
+   跑 `python3 main.py build --template config/template.docx`，得到 `输出.docx`。
+4. 对比 `输入.docx` 与 `输出.docx` 的**正文纯文本**（去掉 XML 标签后逐段比对）：
+   - 段落文本应一致（顺序、文字、数量）；
+   - 标题层级（1~4 级）应一致；
+   - 表格单元格内容、图片数量与引用关系应一致；
+   - 有序列表条目数与内容应一致。
+5. 若有差异，定位是 `convert` 扁平化丢了内容，还是 `build` 渲染丢了内容，
+   再针对对应模块修复。
+
+**为什么用模板文件测**：模板自带封面、承诺书、目录域、样式、编号定义、签名图等
+全部骨架部件，是最复杂的输入；用它走一遍闭环能同时覆盖解析与渲染两条链路，
+比手写最小样例更能暴露真实问题。
+
+**自动化脚本**（放到 `.cache/` 或临时目录，不入库）：
+
+```python
+import re, zipfile
+from docxconvert.cli import convert_to
+from docxbuild.cli import main as build_main
+
+def texts(docx):
+    with zipfile.ZipFile(docx) as z:
+        doc = z.read("word/document.xml").decode("utf-8")
+    return ["".join(re.findall(r"<w:t[^>]*>(.*?)</w:t>", p))
+            for p in re.findall(r"<w:p\b.*?</w:p>", doc, re.S)]
+
+# convert 输入.docx → 临时 md → build → 输出.docx，再 texts() 对比
+```
+
 ## 依赖清单
 
 | 依赖 | 用途 | 是否必需 |
