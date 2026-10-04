@@ -44,4 +44,6 @@ Thumbs.db
 /CLAUDE.md
 
 # 虚拟环境目录
-**/*venv*/**
+**/*venv*/
+
+**/**cache**/
