@@ -1,0 +1,40 @@
+# ===== 个人数据与论文素材：一律排除，禁止入库 =====
+# 使用者的真实封面信息（姓名、学号等）
+cover.json
+
+# 学校模板（可能含版权，使用者自备）
+template.docx
+
+# 论文正文 Markdown 源（每章一个文件）
+章节/
+
+# 论文插图与签名图（含个人数据）
+images/
+
+# 生成产物
+论文正文.md
+论文_*.docx
+论文_*.pdf
+toc_pages.json
+
+# 用户拆解 Word 时生成的图片目录
+*_images/
+
+# ===== Python 缓存 =====
+__pycache__/
+*.pyc
+*.pyo
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+
+# ===== 临时调试文件 =====
+.debug_*.xml
+.toc_pass*.json
+.toc_prev.json

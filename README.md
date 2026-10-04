@@ -1,0 +1,208 @@
+# thesis-docx-tool
+
+论文 Word 排版与拆解工具。围绕一套共用的「块模型」，提供四个子命令，
+覆盖论文从撰写到定稿的完整流程：
+
+- **build**：把按章拆分的 Markdown（`章节/*.md`）套用学校论文模板骨架，生成符合格式的 Word 论文
+- **convert**：把已写好的 Word 论文反向拆解为同格式 Markdown，便于二次编辑
+- **audit**：审计生成的 docx 是否贴合模板格式，避免排版跑偏
+- **toc**：从渲染出的 PDF 反查目录页码，回填 TOC 域
+
+依赖仅 Python 标准库（`zipfile` / `xml.etree` / `re` / `json` / `subprocess`），
+**不用 python-docx、不用 pandoc**。`build` 的插图尺寸计算可选 `Pillow`，无图时可缺省。
+
+## 安装
+
+```bash
+git clone <你的仓库地址>
+cd thesis-docx-tool
+# 可选：插图尺寸计算
+pip install Pillow
+```
+
+## 快速开始
+
+### 1. 准备模板与封面信息
+
+```bash
+# 把学校论文模板放到本目录，命名为 template.docx（不入库）
+cp /path/to/学校论文模板.docx template.docx
+
+# 复制封面信息示例，填写真实信息（cover.json 不入库）
+cp cover.example.json cover.json
+# 编辑 cover.json，填入题目、姓名、学号等
+```
+
+### 2. 撰写或拆解论文
+
+方式一：直接写 Markdown。在 `章节/` 下按章建文件，如 `01_设计思路.md`，格式见下「块模型」。
+
+方式二：把已写好的 Word 论文拆解为 Markdown：
+
+```bash
+python3 main.py convert 用户论文.docx --strip-front
+# 生成 用户论文.md + 用户论文_images/，把内容整理到 章节/ 下
+```
+
+### 3. 生成 Word 论文
+
+```bash
+python3 main.py build
+# 生成 论文_v1_YYYYMMDD.docx（日期取当天）
+```
+
+### 4. 回填目录页码（两遍构建）
+
+```bash
+python3 main.py build                                    # 第一遍：目录页码留空
+soffice --headless --convert-to pdf 论文_v1_*.docx       # 转 PDF
+python3 main.py toc 论文_v1_*.pdf                        # 量页码 → toc_pages.json
+python3 main.py build                                    # 第二遍：目录带上页码
+```
+
+### 5. 审计格式
+
+```bash
+python3 main.py audit                  # 总览
+python3 main.py audit parts styles     # 只查指定项
+python3 main.py audit --list           # 列出全部检查项
+```
+
+## 子命令详解
+
+### build
+
+```
+python3 main.py build [--template 模板.docx]
+```
+
+- 默认模板为同目录 `template.docx`，可用 `--template` 指定其它模板。
+- 产物：`论文_v1_YYYYMMDD.docx` + `论文正文.md`（各章合并视图）。
+- 封面字段从 `cover.json` 读取；承诺书签名图取自 `images/signature.png`（自备）。
+
+### convert
+
+```
+python3 main.py convert 用户论文.docx [-o 输出.md] [--images-dir 图片目录] [--strip-front]
+```
+
+- 把 docx 拆解为与 `章节/*.md` 同格式的 Markdown，图片抽取到独立目录。
+- `--strip-front`：丢弃第一个以数字开头的一级标题之前的内容（封面、承诺书、目录）。
+- 产出的 Markdown 可直接喂给 `build`，形成闭环。
+
+### audit
+
+```
+python3 main.py audit [检查项...] [--product 成品.docx] [--template 模板.docx] [-v] [--strict] [--list]
+```
+
+- 默认成品取本目录下 mtime 最新的 `*.docx`（排除 `template.docx`）。
+- 退出码：有「注意」或「失败」项为 1；`--strict` 时「有意偏离」也算失败。
+
+### toc
+
+```
+python3 main.py toc 成品.pdf
+```
+
+- 需要系统安装 `poppler-utils`（提供 `pdftotext`）。
+- 把各级标题的页码写入 `toc_pages.json`，供 `build` 第二遍使用。
+
+## 块模型（build 与 convert 共用）
+
+`docxbuild.mdparse.parse_md()` 与 `docxconvert.parse.parse_docx()` 共用同一套块格式，
+保证 Markdown ↔ docx 可逆闭环：
+
+| 标签 | 内容 | Markdown 写法 |
+|---|---|---|
+| `h` | `(级别, 标题文本)` | `#` ~ `####` |
+| `p` | 段落文本 | 连续非空行 |
+| `caption` | 表题 / 图题 | `[表4-1　说明]` |
+| `ref` | 参考文献条目 | `[1] 作者. 题名…` |
+| `code` | 代码行列表 | ``` 围栏块 |
+| `table` | 二维单元格列表 | `| a | b |` 管道表格 |
+| `img` | `(图片相对路径, 图题说明)` | `![说明](路径)` |
+
+## 模块结构
+
+```
+main.py  ── 统一入口，按子命令分发
+  │
+  ├─ build   → docxbuild/   （Markdown → docx + 目录页码回填）
+  ├─ convert → docxconvert/ （docx → Markdown）
+  └─ audit   → docxaudit/   （docx 格式审计）
+```
+
+### docxbuild/ —— Markdown → docx
+
+| 模块 | 职责 |
+|---|---|
+| `docinfo` | 论文著录信息：从 `cover.json` 读题目、封面字段、版本号（默认占位符） |
+| `layout` | 版式常量：正文区宽度、插图尺寸上限、签名图宽度 |
+| `mdparse` | Markdown → 块序列（纯文本，不碰 XML） |
+| `fragments` | 块 → OOXML 片段（段落、标题、图、表、代码、参考文献、图题） |
+| `template` | 模板骨架处理：命名空间登记、封面填充、目录重建、签名图替换、样式清理 |
+| `toc_pages` | 从渲染出的 PDF 反查各级标题页码，写入 `toc_pages.json` |
+| `cli` | 主流程编排（`main(argv)`） |
+
+**核心思路**：保留模板骨架（封面、承诺书、目录域、页眉页脚、styles/numbering/theme），
+只替换中间的示例正文。因 `mc:Ignorable` 前缀问题，不能用 ElementTree 整体序列化，
+采用「字符串拼接 + 逐片段序列化」。
+
+依赖方向：`docinfo`/`layout`/`mdparse` 不依赖别人；`fragments` 用 `layout`+`mdparse`；
+`template` 用 `fragments`；`cli` 汇总全部。
+
+### docxconvert/ —— docx → Markdown
+
+| 模块 | 职责 |
+|---|---|
+| `parse` | 解析 docx 的 `document.xml`，按 body 子元素顺序把段落/表格/图片转成块序列 |
+| `extract` | 从 docx 抽取图片到目标目录 |
+| `markdown` | 块序列渲染为 `章节/*.md` 格式的 Markdown 文本 |
+| `cli` | 主流程编排（`main(argv)`） |
+
+**解析要点**：
+
+- 按 `<w:body>` 子元素顺序**混合遍历** `<w:p>` 与 `<w:tbl>`，避免分别遍历导致顺序错乱。
+- 标题识别优先用段落样式 ID（`1`~`4` / `Heading 1` 等），无样式时降级看 `<w:outlineLvl>`。
+- 图题（紧跟图片的「图x.y …」）并入图片块的说明字段；表题单独成 `caption` 块。
+- 目录条目（样式名 `toc*`）自动跳过。
+
+### docxaudit/ —— docx 格式审计
+
+| 模块 | 职责 |
+|---|---|
+| `common` | docx 只读封装、审计上下文、模板/成品路径定位、XML 比对工具 |
+| `expected` | 有意偏离登记表（`EXPECTED_DIFFS`），命中则从「注意」降级为「有意偏离」 |
+| `checks/` | 五项检查：`stale`（新旧）、`parts`（部件）、`styles`（样式）、`body`（正文）、`meta`（元数据） |
+| `report` | 检查结论分级与渲染 |
+| `cli` | 主流程编排（`main(argv)` → 退出码） |
+
+**审计思路**：把成品与模板逐部件、逐样式、逐段落地比对，差异分四类：
+`[通过]`、`[有意偏离]`（登记在 `EXPECTED_DIFFS`）、`[注意]`、`[失败]`。
+
+## 数据流闭环
+
+```
+章节/*.md ──build──▶ 论文.docx ──convert──▶ 拆解.md
+    ▲                                        │
+    └──────────── 二次编辑后重 build ◀────────┘
+```
+
+`build` 与 `convert` 共用块模型，已验证 Markdown → docx → Markdown 块级无损。
+
+## 依赖清单
+
+| 依赖 | 用途 | 是否必需 |
+|---|---|---|
+| Python 3.8+ | 运行环境 | 必需 |
+| Pillow | build 时计算插图显示尺寸 | 无图可缺省 |
+| LibreOffice (`soffice`) | docx 转 PDF（量目录页码用） | 量页码时必需 |
+| poppler-utils (`pdftotext`) | 从 PDF 提取文本量页码 | 量页码时必需 |
+
+## 常见问题
+
+- **build 报找不到模板**：把模板放到 `template.docx` 或用 `--template` 指定。
+- **build 报找不到签名图**：在 `images/signature.png` 放签名图，或从 `cover.json`/模板调整。
+- **convert 后标题层级不对**：用户 docx 的标题样式可能不是模板的 `1`/`2`/`3`/`4`，
+  工具会尝试匹配 `Heading 1` 等常见样式名；匹配不到的当正文处理，可手工调整 MD。
