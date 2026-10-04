@@ -18,8 +18,7 @@
 ```bash
 git clone <你的仓库地址>
 cd thesis-docx-tool
-# 可选：插图尺寸计算
-pip install Pillow
+pip install -r requirements.txt   # 仅 Pillow；只用 build/convert/audit/toc 且无插图时可跳过
 ```
 
 ## 快速开始

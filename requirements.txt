@@ -1,0 +1,12 @@
+# thesis-docx-tool 运行依赖
+#
+# build / convert / audit / toc 四个子命令仅使用 Python 标准库，无需安装任何第三方包；
+# 只有 Pillow 一个可选第三方依赖：
+#   - fig 子命令：渲染架构图 PNG（必需，缺失无法出图）
+#   - build 子命令：按图片真实像素比例计算插图显示尺寸（缺失时回退默认尺寸，不影响出稿）
+#
+# 安装：pip install -r requirements.txt
+#
+# Pillow 9.0 起提供本项目用到的 rounded_rectangle 等接口；
+# 不设上限，由 pip 按当前 Python 版本自动选择兼容版本（如 Python 3.8 会自动解析到 10.x）。
+Pillow>=9.0
