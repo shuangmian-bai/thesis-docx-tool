@@ -437,21 +437,29 @@ config/figures/*.md ──fig──▶ config/images/*.png                   │
 全部骨架部件，是最复杂的输入；用它走一遍闭环能同时覆盖解析与渲染两条链路，
 比手写最小样例更能暴露真实问题。
 
-**自动化脚本**（放到 `.cache/` 或临时目录，不入库）：
+**闭环测试引擎**（`docxloop/` 模块，命令行 `loop`）：
 
-```python
-import re, zipfile
-from docxconvert.cli import convert_to
-from docxbuild.cli import main as build_main
+对输入 docx 走 convert→build 闭环后全盘对比（正文、封面、目录、承诺书、页眉页脚、
+样式、图片尺寸），生成 HTML 可视化报告。每个文件用内容 SHA256 前 16 位作哈希
+隔离工作目录（`.cache/loop_work/<hash>/`），支持批量与多线程，互不污染。
 
-def texts(docx):
-    with zipfile.ZipFile(docx) as z:
-        doc = z.read("word/document.xml").decode("utf-8")
-    return ["".join(re.findall(r"<w:t[^>]*>(.*?)</w:t>", p))
-            for p in re.findall(r"<w:p\b.*?</w:p>", doc, re.S)]
+```bash
+# 用文件路径跑（自动算哈希并创建隔离工作目录）
+python3 main.py loop config/template.docx
 
-# convert 输入.docx → 临时 md → build → 输出.docx，再 texts() 对比
+# 用哈希跑（复用已有工作目录，不重新构建，适合反复调对比引擎）
+python3 main.py loop 7a556f1b7e320a42
+
+# 输入文件夹（批量，每个文件独立哈希隔离）
+python3 main.py loop ./papers/
+
+# 强制重新构建
+python3 main.py loop 论文.docx --no-reuse
 ```
+
+报告输出到 `.cache/loop_report.html`，用浏览器打开验收。差异分「预期」
+（如封面占位符、签名图、目录页码，由 `docxloop/rules.py` 登记）和「非预期」
+两类，非预期差异需定位修复。
 
 ## 依赖清单
 

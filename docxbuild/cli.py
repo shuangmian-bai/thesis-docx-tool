@@ -48,22 +48,31 @@ TOC_PAGES = os.path.join(HERE, "output", "toc_pages.json")
 OUTPUT_DIR = os.path.join(HERE, "output")
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(
-        description="把 章节/*.md 合成 Word 论文（套用模板骨架）。")
-    ap.add_argument("--template", default=DEFAULT_TEMPLATE,
-                    help=f"模板 docx 路径（默认 {DEFAULT_TEMPLATE}）")
-    args = ap.parse_args(argv)
-    TEMPLATE = args.template
+def build(template=None, chap_dir=None, output_dir=None, toc_pages=None,
+          images_base=None):
+    """核心构建流程（不含命令行解析）。
+
+    所有路径参数均可注入，便于批量/多线程场景下用哈希隔离的工作目录调用，
+    避免多个任务共享 config/章节、config/images 造成污染。
+
+    参数为 None 时回退到全局默认值（兼容旧的命令行与单线程调用）。
+    """
+    TEMPLATE = template or DEFAULT_TEMPLATE
+    CHAP = chap_dir or CHAP_DIR
+    OUT = output_dir or OUTPUT_DIR
+    TOC = toc_pages or TOC_PAGES
+    # 图片解析基准：md 里的相对路径（如 images/xxx.png）相对于此目录解析。
+    # 默认为项目根 config/（章节与图片都在 config/ 下）；批量场景传工作目录。
+    IMG_BASE = images_base or os.path.join(HERE, "config")
 
     today = datetime.date.today().strftime("%Y%m%d")
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    out_docx = os.path.join(OUTPUT_DIR, f"论文_{VERSION}_{today}.docx")
-    out_md = os.path.join(OUTPUT_DIR, "论文正文.md")
+    os.makedirs(OUT, exist_ok=True)
+    out_docx = os.path.join(OUT, f"论文_{VERSION}_{today}.docx")
+    out_md = os.path.join(OUT, "论文正文.md")
 
-    if not os.path.isdir(CHAP_DIR):
-        raise SystemExit(f"找不到章节目录：{os.path.relpath(CHAP_DIR, HERE)}（请在该目录下放 *.md）")
-    all_md = sorted(f for f in os.listdir(CHAP_DIR) if f.endswith(".md"))
+    if not os.path.isdir(CHAP):
+        raise SystemExit(f"找不到章节目录：{CHAP}（请在该目录下放 *.md）")
+    all_md = sorted(f for f in os.listdir(CHAP) if f.endswith(".md"))
     if not all_md:
         raise SystemExit("章节目录里没有 .md 文件")
     # 章节文件约定以数字开头（如 01_设计思路.md）。若存在此类文件，只处理它们，
@@ -83,7 +92,7 @@ def main(argv=None):
     # ── 1. 合并 Markdown，供版本管理与比对 ──
     merged = []
     for fn in chapters:
-        with open(os.path.join(CHAP_DIR, fn), encoding="utf-8") as fh:
+        with open(os.path.join(CHAP, fn), encoding="utf-8") as fh:
             merged.append(fh.read().rstrip() + "\n")
     with open(out_md, "w", encoding="utf-8") as fh:
         fh.write("\n\n".join(merged))
@@ -124,17 +133,17 @@ def main(argv=None):
     # 目录要用到标题清单，先扫一遍各章的 # / ## 标题
     outline = []
     for fn in chapters:
-        with open(os.path.join(CHAP_DIR, fn), encoding="utf-8") as fh:
+        with open(os.path.join(CHAP, fn), encoding="utf-8") as fh:
             for ln in fh:
                 m = re.match(r"^(#{1,2})\s+(.*?)\s*$", ln)
                 if m:
                     outline.append((len(m.group(1)), m.group(2)))
 
     pages = {}
-    if os.path.exists(TOC_PAGES):
-        with open(TOC_PAGES, encoding="utf-8") as fh:
+    if os.path.exists(TOC):
+        with open(TOC, encoding="utf-8") as fh:
             pages = json.load(fh)
-        print(f"已读取 {os.path.relpath(TOC_PAGES, HERE)}（{len(pages)} 条页码）")
+        print(f"已读取 {TOC}（{len(pages)} 条页码）")
 
     log = []
     fill_cover(keep, log)
@@ -173,7 +182,7 @@ def main(argv=None):
     n_img = n_tbl = n_code = n_ref = n_ol = n_ol_group = 0
 
     for fn in chapters:
-        with open(os.path.join(CHAP_DIR, fn), encoding="utf-8") as fh:
+        with open(os.path.join(CHAP, fn), encoding="utf-8") as fh:
             blocks = parse_md(fh.read())
         for blk in blocks:
             kind = blk[0]
@@ -212,8 +221,8 @@ def main(argv=None):
                     body_xml.append(para_xml(blk[1], style="a0"))
                     n_ol_fallback += 1
             elif kind == "img":
-                # 图片路径相对于 config/ 目录（章节与图片都在 config/ 下）
-                path = os.path.normpath(os.path.join(HERE, "config", blk[1]))
+                # 图片路径相对于 IMG_BASE（默认为 config/，批量场景为工作目录）
+                path = os.path.normpath(os.path.join(IMG_BASE, blk[1]))
                 if not os.path.exists(path):
                     raise SystemExit(f"插图不存在：{blk[1]}（应放在 config/images/ 下）")
                 name = os.path.basename(path)
@@ -373,3 +382,14 @@ def main(argv=None):
         print("  目录已预填静态页码；在 Word 中按 Ctrl+A 后按 F9 可重建为由排版引擎计算的域结果")
     else:
         print("  目录页码为空，跑 toc_pages.py 后重新生成即可填入（见该脚本的用法说明）")
+    return out_docx
+
+
+def main(argv=None):
+    """命令行入口：解析参数后调用 build()。"""
+    ap = argparse.ArgumentParser(
+        description="把 章节/*.md 合成 Word 论文（套用模板骨架）。")
+    ap.add_argument("--template", default=DEFAULT_TEMPLATE,
+                    help=f"模板 docx 路径（默认 {DEFAULT_TEMPLATE}）")
+    args = ap.parse_args(argv)
+    build(template=args.template)
