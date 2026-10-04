@@ -5,8 +5,11 @@
 我们不用它，但同样要注意顺序）。
 
 块格式与 `docxbuild.mdparse` 完全对齐：标题、正文、图题、表题、表格、代码、参考文献、
-图片。图片块里存的是 docx 内部的 zip 路径（如 `word/media/image1.png`），由 `cli`
-在抽取图片后改写为相对路径。
+有序列表、图片。图片块里存的是 docx 内部的 zip 路径（如 `word/media/image1.png`），
+由 `cli` 在抽取图片后改写为相对路径。
+
+有序列表**只读 Word 的自动编号属性**（pPr/numPr + numbering.xml 的 numFmt=decimal），
+不靠 "1." 文本前缀猜测；手动敲出来的伪编号仍按正文解析，由 GUI 人工/AI 改判为 ol。
 """
 import os
 import re
@@ -55,6 +58,55 @@ def _para_style(p):
         return None
     pstyle = ppr.find(f"{W}pStyle")
     return pstyle.get(f"{W}val") if pstyle is not None else None
+
+
+def _load_numbering(zin):
+    """读 numbering.xml，返回 {numId: 0 级编号格式}（如 decimal / bullet）。
+
+    numId 经 abstractNumId 间接引用 abstractNum；只取 ilvl=0 的 numFmt，
+    供段落级分类（decimal → ol，其余暂按正文）。
+    """
+    try:
+        raw = zin.read("word/numbering.xml").decode("utf-8")
+    except KeyError:
+        return {}
+    abs_fmt = {}
+    for m in re.finditer(
+            r'<w:abstractNum\b[^>]*w:abstractNumId="(\d+)"(.*?)</w:abstractNum>',
+            raw, re.S):
+        lvl0 = re.search(r'<w:lvl\b[^>]*w:ilvl="0".*?</w:lvl>', m.group(2), re.S)
+        fmt = None
+        if lvl0:
+            fm = re.search(r'<w:numFmt w:val="([^"]+)"', lvl0.group(0))
+            fmt = fm.group(1) if fm else None
+        abs_fmt[m.group(1)] = fmt
+    num_fmt = {}
+    for m in re.finditer(r'<w:num\b[^>]*w:numId="(\d+)"(.*?)</w:num>|<w:num\b[^>]*w:numId="(\d+)"[^>]*/>',
+                         raw, re.S):
+        nid = m.group(1) or m.group(3)
+        body = m.group(2) or ""
+        am = re.search(r'<w:abstractNumId w:val="(\d+)"', body)
+        if am:
+            num_fmt[nid] = abs_fmt.get(am.group(1))
+    return num_fmt
+
+
+def _para_num(p):
+    """段落的自动编号 (numId, ilvl)；无 numPr 返回 (None, 0)。"""
+    ppr = p.find(f"{W}pPr")
+    if ppr is None:
+        return None, 0
+    numpr = ppr.find(f"{W}numPr")
+    if numpr is None:
+        return None, 0
+    nid_el = numpr.find(f"{W}numId")
+    ilvl_el = numpr.find(f"{W}ilvl")
+    nid = nid_el.get(f"{W}val") if nid_el is not None else None
+    try:
+        ilvl = int(ilvl_el.get(f"{W}val")) if ilvl_el is not None else 0
+    except (TypeError, ValueError):
+        ilvl = 0
+    return nid, ilvl
 
 
 def _outline_level(p):
@@ -130,6 +182,7 @@ def parse_docx(docx_path):
     """
     zin = zipfile.ZipFile(docx_path)
     names, heading_lv = _load_styles(zin)
+    num_fmt = _load_numbering(zin)
 
     caption_ids = ({sid for sid, nm in names.items()
                     if "图表标题" in nm or "caption" in nm.lower()}
@@ -178,6 +231,13 @@ def parse_docx(docx_path):
                 code_buf.append(text)
                 continue
             flush_code()
+
+            # 自动编号优先于标题判定：编号段落（decimal）归有序列表，
+            # numId=0 是 Word 显式「取消编号」，不能归入
+            num_id, _ilvl = _para_num(child)
+            if num_id and num_id != "0" and num_fmt.get(num_id) == "decimal":
+                blocks.append(("ol", text))
+                continue
 
             lvl = heading_lv.get(sid) if sid else None
             if lvl is None:

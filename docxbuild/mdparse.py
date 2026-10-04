@@ -11,6 +11,7 @@
 | `img` | `(图片路径, 图题说明)` | `![说明](路径)` |
 | `caption` | 表题 / 图题 | `[表4-1　说明]` |
 | `ref` | 参考文献条目 | `[1] 作者. 题名…` |
+| `ol` | 有序列表的单个条目（连续多个同列一表） | `1. 文本` |
 | `code` | 代码行列表 | ``` 围栏块 |
 | `table` | 二维单元格列表 | `| a | b |` |
 """
@@ -93,6 +94,14 @@ def parse_md(text):
             i += 1
             continue
 
+        # 有序列表项：1. / 1) 开头。每项独立成块（连续多个 ol 在 build 时
+        # 归为同一自动编号列表），与块数护栏及 AI「只改分类不并块」约束兼容
+        m = re.match(r"^\d+[.)]\s+(.+)$", s)
+        if m:
+            blocks.append(("ol", m.group(1).strip()))
+            i += 1
+            continue
+
         # 引用块（用作「说明」提示框）
         if s.startswith(">"):
             buf = []
@@ -121,7 +130,8 @@ def parse_md(text):
         while i < len(lines):
             nxt = lines[i].strip()
             if (not nxt or nxt.startswith(("#", "|", ">", "```", "!["))
-                    or re.match(r"^\[(?:表|图)", nxt)):
+                    or re.match(r"^\[(?:表|图)", nxt)
+                    or re.match(r"^\d+[.)]\s+", nxt)):
                 break
             buf.append(nxt)
             i += 1

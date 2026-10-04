@@ -84,6 +84,18 @@ def ref_xml(text):
     return f"<w:p><w:pPr>{ppr}</w:pPr>{runs_xml(text)}</w:p>"
 
 
+def list_item_xml(text, num_id):
+    """有序列表条目：挂 numbering.xml 里的自动编号（decimal），文字样式沿用正文 a0。
+
+    缩进、编号文字（"1."）与计数全部由编号定义给出，片段里不写编号文本；
+    同一段连续条目共用一个 numId，新段落在 cli 里另发新 numId 并从 1 重编号。
+    """
+    ppr = (f'<w:pStyle w:val="a0"/>'
+           f'<w:numPr><w:ilvl w:val="0"/>'
+           f'<w:numId w:val="{num_id}"/></w:numPr>')
+    return f"<w:p><w:pPr>{ppr}</w:pPr>{runs_xml(text)}</w:p>"
+
+
 def code_xml(lines):
     return "".join(
         f'<w:p><w:pPr><w:pStyle w:val="code"/></w:pPr>'

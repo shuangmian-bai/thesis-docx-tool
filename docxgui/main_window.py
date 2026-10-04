@@ -16,8 +16,10 @@ from docxconvert.markdown import render
 from docxgui.build_page import BuildPage
 from docxgui.review_page import ReviewPage
 from docxgui.settings_dialog import SettingsDialog
+from docxgui.template_page import TemplateDialog
 from docxgui.wizard_page import WizardPage
 from docxgui.workers import ParseWorker, RunProcess
+from docxflow.cli import DEFAULT_TEMPLATE
 
 CONFIG_DIR = os.path.join(HERE, "config")
 CHAPTERS_DIR = os.path.join(CONFIG_DIR, "章节")
@@ -52,6 +54,7 @@ class MainWindow(QMainWindow):
     def _wire(self):
         self.wizard.start_requested.connect(self._start_parse)
         self.wizard.open_settings.connect(self._open_settings)
+        self.wizard.open_template.connect(self._open_template)
         self.review.back_requested.connect(lambda: self.stack.setCurrentIndex(0))
         self.review.confirm_requested.connect(self._confirm)
         self.review.settings_requested.connect(self._open_settings)
@@ -64,8 +67,17 @@ class MainWindow(QMainWindow):
     def _build_menu(self):
         settings_act = QAction("AI 配置...", self)
         settings_act.triggered.connect(self._open_settings)
+        template_act = QAction("模板预览与修复...", self)
+        template_act.triggered.connect(lambda: self._open_template(""))
         menu = self.menuBar().addMenu("设置")
+        menu.addAction(template_act)
         menu.addAction(settings_act)
+
+    def _open_template(self, path: str = ""):
+        path = path or self.wizard.tpl_edit.text().strip() or DEFAULT_TEMPLATE
+        dlg = TemplateDialog(os.path.abspath(path), HERE, self)
+        dlg.template_changed.connect(self.wizard.tpl_edit.setText)
+        dlg.exec()
 
     def _refresh_status(self):
         from docxai import config as aiconf

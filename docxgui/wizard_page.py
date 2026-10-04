@@ -15,6 +15,7 @@ class WizardPage(QWidget):
 
     start_requested = pyqtSignal(dict)
     open_settings = pyqtSignal()
+    open_template = pyqtSignal(str)       # 路径可能为空串（调用方回退默认模板）
 
     def __init__(self):
         super().__init__()
@@ -74,6 +75,10 @@ class WizardPage(QWidget):
         btn_tpl.clicked.connect(self._pick_template)
         row3.addWidget(self.tpl_edit, 1)
         row3.addWidget(btn_tpl)
+        btn_tpl_check = QPushButton("模板预览与修复...")
+        btn_tpl_check.clicked.connect(
+            lambda: self.open_template.emit(self.tpl_edit.text().strip()))
+        row3.addWidget(btn_tpl_check)
         v3.addLayout(row3)
         root.addWidget(tpl_box)
 

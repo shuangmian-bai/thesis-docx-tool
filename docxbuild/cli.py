@@ -29,13 +29,14 @@ import xml.etree.ElementTree as ET
 from docxbuild import HERE, W
 from docxbuild.docinfo import COVER, TITLE, VERSION
 from docxbuild.fragments import (
-    caption_xml, code_xml, heading_xml, image_xml, para_xml, ref_xml, table_xml,
+    caption_xml, code_xml, heading_xml, image_xml, list_item_xml, para_xml,
+    ref_xml, table_xml,
 )
 from docxbuild.mdparse import parse_md
 from docxbuild.template import (
     TPL_SIGN_PART, add_update_fields, check_prefixes, declared_namespaces,
     document_namespaces, fill_cover, fit_signature, fix_core_props, free_toc_case,
-    register_all, shrink_toc, tidy_frag,
+    list_numbering, make_list_num_xml, register_all, shrink_toc, tidy_frag,
 )
 
 CHAP_DIR = os.path.join(HERE, "config", "章节")
@@ -144,14 +145,27 @@ def main(argv=None):
     used_ids = [int(m) for m in re.findall(r'Id="rId(\d+)"', rels_xml)]
     next_rel = max(used_ids) + 1 if used_ids else 1
 
+    # 有序列表编号规划：每个连续 ol 段发一个新 numId（从 1 重编号）。
+    # 模板没有 numbering.xml 或缺 decimal 定义时，ol 降级为普通段落并计数提示。
+    numbering_xml = ""
+    if "word/numbering.xml" in zin.namelist():
+        numbering_xml = zin.read("word/numbering.xml").decode("utf-8")
+    max_num_id, list_abs = list_numbering(numbering_xml)
+    next_num_id = max_num_id + 1
+    new_nums_xml = []
+    cur_list_id = None
+    n_ol_fallback = 0
+
     media, new_rels, body_xml = {}, [], []
-    n_img = n_tbl = n_code = n_ref = 0
+    n_img = n_tbl = n_code = n_ref = n_ol = n_ol_group = 0
 
     for fn in chapters:
         with open(os.path.join(CHAP_DIR, fn), encoding="utf-8") as fh:
             blocks = parse_md(fh.read())
         for blk in blocks:
             kind = blk[0]
+            if kind != "ol":
+                cur_list_id = None      # 连续 ol 段在任何非 ol 块处中断
             if kind == "h":
                 body_xml.append(heading_xml(blk[1], blk[2]))
             elif kind in ("p", "quote"):
@@ -169,6 +183,21 @@ def main(argv=None):
             elif kind == "table":
                 body_xml.append(table_xml(blk[1]))
                 n_tbl += 1
+            elif kind == "ol":
+                n_ol += 1
+                if list_abs is not None:
+                    if cur_list_id is None:
+                        # 新的连续列表段：发新 numId，编号自动从 1 开始
+                        cur_list_id = next_num_id
+                        next_num_id += 1
+                        new_nums_xml.append(
+                            make_list_num_xml(cur_list_id, list_abs))
+                        n_ol_group += 1
+                    body_xml.append(list_item_xml(blk[1], cur_list_id))
+                else:
+                    # 模板不支持自动编号：降级正文，不静默丢内容
+                    body_xml.append(para_xml(blk[1], style="a0", jc="both"))
+                    n_ol_fallback += 1
             elif kind == "img":
                 # 图片路径相对于 config/ 目录（章节与图片都在 config/ 下）
                 path = os.path.normpath(os.path.join(HERE, "config", blk[1]))
@@ -186,7 +215,9 @@ def main(argv=None):
                 if blk[2]:
                     body_xml.append(caption_xml(blk[2]))
                 n_img += 1
-        # 章与章之间留一个空段作分隔；末章之后不留，否则会多出一整页空白
+        # 章与章之间留一个空段作分隔；末章之后不留，否则会多出一整页空白；
+        # 分隔段同时把跨章的连续列表切断（下一章的 ol 段另发 numId）
+        cur_list_id = None
         if fn != chapters[-1]:
             body_xml.append('<w:p><w:pPr><w:pStyle w:val="a0"/></w:pPr></w:p>')
 
@@ -280,6 +311,11 @@ def main(argv=None):
         "word/styles.xml": free_toc_case(
             zin.read("word/styles.xml").decode("utf-8")).encode("utf-8"),
     }
+    if new_nums_xml:
+        # 新增的列表编号实例插到根元素末尾（w:num 必须排在 abstractNum 之后）
+        replace["word/numbering.xml"] = numbering_xml.replace(
+            "</w:numbering>", "".join(new_nums_xml) + "</w:numbering>",
+            1).encode("utf-8")
     if "docProps/core.xml" in zin.namelist():
         core = zin.read("docProps/core.xml").decode("utf-8")
         replace["docProps/core.xml"] = fix_core_props(
@@ -314,7 +350,12 @@ def main(argv=None):
     size = os.path.getsize(out_docx) / 1024
     print(f"\n已生成 {os.path.relpath(out_docx, HERE)}  ({size:.0f} KB)")
     print(f"  章节 {len(chapters)} 个 · 插图 {n_img} 张 · 表格 {n_tbl} 个 · "
-          f"代码块 {n_code} 个 · 参考文献 {n_ref} 条")
+          f"代码块 {n_code} 个 · 参考文献 {n_ref} 条 · "
+          f"有序列表 {n_ol_group} 段/{n_ol} 条")
+    if n_ol_fallback:
+        print(f"  注意：模板缺少 numbering.xml 或 decimal 编号定义，"
+              f"{n_ol_fallback} 条列表项已按普通正文排版；"
+              f"在模板中补编号定义后重新构建即可恢复自动编号")
     if pages:
         print("  目录已预填静态页码；在 Word 中按 Ctrl+A 后按 F9 可重建为由排版引擎计算的域结果")
     else:

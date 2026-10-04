@@ -6,6 +6,7 @@
 - `p` → 正文段落
 - `caption` → `[文本]`（表题；图题已在 parse 阶段并入图片块）
 - `ref` → 原样输出 `[1] …`
+- `ol` → `1. 文本`；连续条目为同一列表，编号在每个连续段重新从 1 计数
 - `code` → ``` 围栏块
 - `table` → 管道表格，首行后加 `| --- |` 分隔行
 - `img` → `![说明](路径)`
@@ -19,8 +20,16 @@ def _cell(s):
 
 def render(blocks):
     out = []
+    ol_n = 0          # 当前连续有序列表的序号（遇到非 ol 块归零）
     for blk in blocks:
         kind = blk[0]
+        if kind == "ol":
+            ol_n += 1
+            out.append(f"{ol_n}. {blk[1]}")
+            continue
+        if ol_n:
+            out.append("")          # 列表段结束，与后续块空一行分隔
+            ol_n = 0
         if kind == "h":
             out.append(f"{'#' * blk[1]} {blk[2]}")
             out.append("")

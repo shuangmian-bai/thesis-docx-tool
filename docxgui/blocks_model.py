@@ -9,6 +9,7 @@ from typing import Tuple
 KIND_LABELS = {
     "h1": "标题1", "h2": "标题2", "h3": "标题3", "h4": "标题4",
     "p": "正文",
+    "ol": "有序列表",
     "quote": "引用",
     "caption": "图题/表题",
     "ref": "文献",
@@ -18,11 +19,14 @@ KIND_LABELS = {
 }
 
 #: 类型筛选下拉/复选框的展示顺序
-FILTER_KINDS = ("h1", "h2", "h3", "h4", "p", "quote", "caption",
+FILTER_KINDS = ("h1", "h2", "h3", "h4", "p", "ol", "quote", "caption",
                 "ref", "code", "table", "img")
 
 #: 可做 AI/手动文本改写的块类型
-TEXT_EDITABLE = ("h", "p", "quote", "caption", "ref")
+TEXT_EDITABLE = ("h", "p", "ol", "quote", "caption", "ref")
+
+#: 文本类块（元组形态 (kind, text)），互转时取 blk[1]
+TEXTISH = ("p", "ol", "quote", "caption", "ref")
 
 
 def kind_key(block: Tuple) -> str:
@@ -40,7 +44,7 @@ def summary(block: Tuple, width: int = 38) -> str:
     kind = block[0]
     if kind == "h":
         text = block[2]
-    elif kind in ("p", "quote", "caption", "ref"):
+    elif kind in ("p", "ol", "quote", "caption", "ref"):
         text = block[1]
     elif kind == "code":
         text = f"{len(block[1])} 行代码：" + " / ".join(block[1][:2])

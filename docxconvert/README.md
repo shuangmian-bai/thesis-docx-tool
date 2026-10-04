@@ -27,6 +27,11 @@ Markdown 文件 + 抽取出的图片目录。产出的 Markdown 可直接喂给 
 
 - 按 `<w:body>` 子元素顺序**混合遍历** `<w:p>` 与 `<w:tbl>`，避免分别遍历导致顺序错乱。
 - 标题识别优先用段落样式 ID（`1`~`4` / `Heading 1` 等），无样式时降级看 `<w:outlineLvl>`。
+- 有序列表只认真自动编号：读 `pPr/numPr/numId/ilvl`，查 `numbering.xml` 得
+  该 numId 的 0 级 `numFmt`；`numFmt=decimal` 且 numId 非 0 才判为 `ol`，
+  且该判定优先于标题样式。`numId=0`（取消编号）、bullet 等非 decimal 格式
+  一律按正文处理。不看文本里的「1.」前缀——手写伪编号留给 GUI 人工或 AI 改判。
+  渲染为 md 时连续 `ol` 块按段重新输出 `1. 2. 3.`，不保留 Word 实际编号。
 - 图题（紧跟图片的「图x.y …」）并入图片块的说明字段；表题单独成 `caption` 块。
 - 目录条目（样式名 `toc*`）自动跳过。
 - `--strip-front`：丢弃第一个以数字开头的一级标题之前的内容（封面、承诺书、目录）。

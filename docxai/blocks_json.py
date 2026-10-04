@@ -6,15 +6,20 @@ AI 只能读写 JSON（dict）结构，不能直接碰内部 tuple；本模块�
 块定义与 docxbuild.mdparse / docxconvert.parse 完全对齐：
 
     ("h", 级别1-4, 文本)
-    ("p"|"quote"|"caption"|"ref", 文本)
+    ("p"|"quote"|"caption"|"ref"|"ol", 文本)
     ("code", [行文本, ...])
     ("table", [[单元格, ...], ...])
     ("img", 图片路径, 图题文本)
+
+其中 `ol` 是有序列表（1. 2. 3.）的**单个条目**：连续多个 ol 块在构建时
+归为同一个自动编号列表，拆成逐条目块是为了与块数护栏兼容（AI 只改分类，
+不增删块、不并块）。
 
 对应的 dict 形态（喂给 AI / 从 AI 收回）：
 
     {"t":"h","level":1,"text":"..."}
     {"t":"p","text":"..."}
+    {"t":"ol","text":"..."}
     {"t":"code","lines":["..."]}
     {"t":"table","rows":[["..."]]}
     {"t":"img","path":"images/x.png","caption":"..."}
@@ -22,7 +27,7 @@ AI 只能读写 JSON（dict）结构，不能直接碰内部 tuple；本模块�
 from typing import Dict, List, Optional, Tuple
 
 Block = Tuple
-TEXT_KINDS = ("p", "quote", "caption", "ref")
+TEXT_KINDS = ("p", "quote", "caption", "ref", "ol")
 
 
 class BlockSchemaError(Exception):
@@ -103,7 +108,7 @@ def validate_block(d: object) -> List[str]:
         if not isinstance(d.get("caption"), str):
             probs.append("img 的 caption 必须是字符串")
         return probs
-    return [f"未知块类型 {t!r}（允许 h/p/quote/caption/ref/code/table/img）"]
+    return [f"未知块类型 {t!r}（允许 h/p/quote/caption/ref/ol/code/table/img）"]
 
 
 def _check_text(d: Dict[str, object]) -> List[str]:

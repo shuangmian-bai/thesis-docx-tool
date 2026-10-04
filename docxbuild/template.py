@@ -180,6 +180,36 @@ def fit_signature(kids, rels_xml, path):
     raise SystemExit("诚信承诺书里找不到签名图，无法替换")
 
 
+def list_numbering(numbering_xml):
+    """分析模板 numbering.xml，返回 (现有最大 numId, 可复用的 decimal abstractNumId)。
+
+    供有序列表构建：每个连续列表段新建一个 w:num 引用该 abstractNum，
+    用 startOverride 从 1 重编号。没有任何 decimal 定义（或缺部件）时
+    abstractNumId 为 None，调用方降级为普通段落并提示。
+    """
+    if not numbering_xml:
+        return 0, None
+    nums = [int(x) for x in re.findall(
+        r'<w:num\b[^>]*w:numId="(\d+)"', numbering_xml)]
+    decimal_abs = None
+    for m in re.finditer(
+            r'<w:abstractNum\b[^>]*w:abstractNumId="(\d+)"(.*?)</w:abstractNum>',
+            numbering_xml, re.S):
+        lvl0 = re.search(r'<w:lvl\b[^>]*w:ilvl="0".*?</w:lvl>', m.group(2), re.S)
+        if lvl0 is not None and '<w:numFmt w:val="decimal"' in lvl0.group(0):
+            decimal_abs = m.group(1)
+            break
+    return (max(nums) if nums else 0), decimal_abs
+
+
+def make_list_num_xml(num_id, abstract_id):
+    """生成一个新的 decimal 自动编号实例（独立计数，从 1 开始）。"""
+    return (f'<w:num w:numId="{num_id}">'
+            f'<w:abstractNumId w:val="{abstract_id}"/>'
+            f'<w:lvlOverride w:ilvl="0">'
+            f'<w:startOverride w:val="1"/></w:lvlOverride></w:num>')
+
+
 def free_toc_case(styles_xml):
     """去掉目录样式的强制大小写，让目录条目按原样显示。
 

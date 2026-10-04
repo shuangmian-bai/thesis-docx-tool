@@ -1,24 +1,26 @@
 """第二页：审阅扁平化块序列。
 
 左：按 H1 章分组的块树（纯文本，不渲染 Word 格式），可按类型筛选；
-右：当前块编辑器（标题级别/文本/代码/表格/图片路径与图题）。
-支持整篇 AI 结构修正、单块 AI 内容改写，所有改动可逐块还原；
-确认前只在内存中，不写任何 md。
+右：当前块编辑器（类型互转/标题级别/文本/代码/表格/图片路径与图题）。
+结构修复手段：标题↔正文等类型误判可直接改类型，可插入正文/标题/有序列表项/
+表格/图片、删除块，支持整篇 AI 结构修正与单块 AI 内容改写；插入/删除/改类型/
+AI 整批可逐步撤销，文字改动可逐块还原。确认前只在内存中，不写任何 md。
 """
 import os
 from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap
-from PyQt6.QtWidgets import (QComboBox, QHBoxLayout, QInputDialog, QLabel,
-                             QLineEdit, QListWidget, QListWidgetItem,
-                             QMessageBox, QPlainTextEdit, QProgressDialog,
+from PyQt6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QInputDialog,
+                             QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                             QMenu, QMessageBox, QPlainTextEdit, QProgressDialog,
                              QPushButton, QSpinBox, QSplitter, QTableWidget,
-                             QTableWidgetItem, QVBoxLayout, QWidget)
+                             QTableWidgetItem, QToolButton, QVBoxLayout, QWidget)
 
 from docxai import config as aiconf
 from docxai.blocks_json import split_chapters
 from docxai.client import AIClient
+from docxgui import block_ops as ops
 from docxgui import blocks_model as bm
 from docxgui.workers import RewriteWorker, StructureWorker
 
@@ -34,9 +36,10 @@ class ReviewPage(QWidget):
     settings_requested = pyqtSignal()
     status = pyqtSignal(str)
 
-    def __init__(self, config_dir: str):
+    def __init__(self, config_dir: str, images_dir: Optional[str] = None):
         super().__init__()
         self._config_dir = config_dir       # 图片路径基准（config/）
+        self._images_dir = images_dir       # 本文档图片抽取目录（插入图片落点）
         self.blocks: list = []
         self._originals: dict = {}          # idx -> 首次改动前的块（还原依据）
         self._ai_changed: set = set()
@@ -44,6 +47,7 @@ class ReviewPage(QWidget):
         self._loading = False
         self._struct_worker = None
         self._rewrite_worker = None
+        self._history: list = []            # 结构操作栈（插入/删除/改类型/AI 整批）
         self._build()
 
     # ---------------- 界面搭建 ----------------
@@ -67,6 +71,24 @@ class ReviewPage(QWidget):
         bar.addWidget(self.btn_struct)
         bar.addWidget(self.btn_rewrite)
         bar.addWidget(self.btn_restore)
+
+        self.btn_insert = QToolButton()
+        self.btn_insert.setText("插入块 ▾")
+        self.btn_insert.setPopupMode(
+            QToolButton.ToolButtonPopupMode.InstantPopup)
+        menu = QMenu(self)
+        for kind, text in (("p", "正文段落"), ("h", "标题"),
+                           ("ol", "有序列表项"), ("table", "表格"),
+                           ("img", "图片（选择文件）")):
+            menu.addAction(text, lambda k=kind: self._insert_block(k))
+        self.btn_insert.setMenu(menu)
+        bar.addWidget(self.btn_insert)
+        self.btn_delete = QPushButton("删除当前块")
+        self.btn_delete.clicked.connect(self._delete_current)
+        bar.addWidget(self.btn_delete)
+        self.btn_undo = QPushButton("撤销结构操作")
+        self.btn_undo.clicked.connect(self._undo)
+        bar.addWidget(self.btn_undo)
         bar.addStretch(1)
         layout.addLayout(bar)
 
@@ -83,7 +105,7 @@ class ReviewPage(QWidget):
         btn_back.clicked.connect(self.back_requested.emit)
         bottom.addWidget(btn_back)
         bottom.addStretch(1)
-        self.hint = QLabel("纯文本审阅；确认结构无误后再导出")
+        self.hint = QLabel("纯文本审阅；改类型/插入/删除均可撤销，确认结构无误后再导出")
         bottom.addWidget(self.hint)
         btn_md = QPushButton("仅导出 Markdown")
         btn_md.clicked.connect(lambda: self.confirm_requested.emit(False))
@@ -98,6 +120,18 @@ class ReviewPage(QWidget):
         box = QVBoxLayout()
         self.kind_label = QLabel("未选择块")
         box.addWidget(self.kind_label)
+
+        type_row = QHBoxLayout()
+        type_row.addWidget(QLabel("修改类型："))
+        self.kind_combo = QComboBox()
+        for key in ops.CONVERT_KEYS:
+            self.kind_combo.addItem(bm.KIND_LABELS[key], key)
+        self.kind_combo.setEnabled(False)
+        self.kind_combo.activated.connect(self._convert_current)
+        type_row.addWidget(self.kind_combo)
+        type_row.addWidget(QLabel("（标题↔正文等误判可在此修正）"))
+        type_row.addStretch(1)
+        box.addLayout(type_row)
 
         lv_row = QHBoxLayout()
         lv_row.addWidget(QLabel("标题级别："))
@@ -157,11 +191,16 @@ class ReviewPage(QWidget):
             w.setVisible(visible)
 
     # ---------------- 数据装载 ----------------
+    def set_images_dir(self, images_dir: str):
+        """主窗口在解析完成后告知本文档图片目录（插入图片的落点）。"""
+        self._images_dir = images_dir
+
     def load_blocks(self, blocks: list):
         """初次装载：重置一切备份与 AI 标记。"""
         self.blocks = list(blocks)
         self._originals.clear()
         self._ai_changed.clear()
+        self._history.clear()
         self._cur = None
         self._rebuild_tree()
         self.status.emit(f"共 {len(self.blocks)} 个块，请核对结构分类")
@@ -229,15 +268,17 @@ class ReviewPage(QWidget):
         try:
             if idx is None:
                 self.kind_label.setText("章标题" if item else "未选择块")
+                self.kind_combo.setEnabled(False)
                 self._show_editor("none")
                 return
             blk = self.blocks[idx]
             self.kind_label.setText(f"块 #{idx} · 类型：{bm.label(blk)}")
+            self._fill_kind_combo(blk)
             if blk[0] == "h":
                 self.level_spin.setValue(blk[1])
                 self.text_edit.setPlainText(blk[2])
                 self._show_editor("h")
-            elif blk[0] in ("p", "quote", "caption", "ref"):
+            elif blk[0] in ("p", "ol", "quote", "caption", "ref"):
                 self.text_edit.setPlainText(blk[1])
                 self._show_editor("text")
             elif blk[0] == "code":
@@ -354,6 +395,142 @@ class ReviewPage(QWidget):
         self._on_select(row)
         self.status.emit(f"块 #{idx} 已还原为原始内容")
 
+    # ---------------- 结构操作：改类型 / 插入 / 删除 / 撤销 ----------------
+    def _fill_kind_combo(self, blk: tuple):
+        """按当前块设置类型下拉：可互转类型启用并选中当前类型，表格/图片禁用。"""
+        ok = ops.can_convert(blk)
+        self.kind_combo.setEnabled(ok)
+        if not ok:
+            return
+        row = self.kind_combo.findData(bm.kind_key(blk))
+        self.kind_combo.blockSignals(True)
+        if row >= 0:
+            self.kind_combo.setCurrentIndex(row)
+        self.kind_combo.blockSignals(False)
+
+    def _convert_current(self, _row: int = -1):
+        if self._cur is None:
+            return
+        idx = self._cur
+        key = self.kind_combo.currentData()
+        old = self.blocks[idx]
+        if not key or key == bm.kind_key(old):
+            return
+        new = ops.convert(old, key)
+        self._history.append(("conv", idx, old, new))
+        self._mutate(idx, new)
+        self._rebuild_tree()
+        self._select_idx(idx)
+        self.status.emit(f"块 #{idx} 已改为「{bm.KIND_LABELS[key]}」，"
+                         f"可点「撤销结构操作」或「还原当前块」")
+
+    def _select_idx(self, idx: int):
+        """按全局块下标选中树项（章标题项无 _IDX）。"""
+        for i in range(self.tree.count()):
+            if self.tree.item(i).data(_IDX) == idx:
+                self.tree.setCurrentRow(i)
+                return
+
+    def _shift_marks_up(self, pos: int):
+        """在 pos 处插入一块后：备份表与 AI 标记中 >=pos 的下标整体后移。"""
+        for k in sorted((k for k in self._originals if k >= pos), reverse=True):
+            self._originals[k + 1] = self._originals.pop(k)
+        self._ai_changed = {k + 1 if k >= pos else k for k in self._ai_changed}
+
+    def _shift_marks_down(self, idx: int):
+        """删除 idx 处块后：备份表与 AI 标记中 >idx 的下标整体前移。"""
+        self._originals.pop(idx, None)
+        for k in sorted(k for k in self._originals if k > idx):
+            self._originals[k - 1] = self._originals.pop(k)
+        self._ai_changed = {k - 1 if k > idx else k
+                            for k in self._ai_changed if k != idx}
+
+    def _insert_block(self, kind: str):
+        if kind == "img":
+            self._insert_image()
+            return
+        self._insert_at(ops.new_block(kind), bm.KIND_LABELS[
+            kind if kind != "h" else "h2"])
+
+    def _insert_at(self, blk: tuple, label: str):
+        pos = self._cur + 1 if self._cur is not None else len(self.blocks)
+        self.blocks.insert(pos, blk)
+        self._shift_marks_up(pos)
+        self._history.append(("ins", pos, blk))
+        self._cur = None
+        self._rebuild_tree()
+        self._select_idx(pos)
+        if blk[0] in ("p", "h", "ol"):
+            self.text_edit.setFocus()
+        self.status.emit(f"已在 #{pos} 插入「{label}」，请编辑内容（可撤销）")
+
+    def _insert_image(self):
+        if not self._images_dir:
+            QMessageBox.warning(self, "无法插入图片",
+                                "请先解析一个 Word 文档（图片需复制到本文档的素材目录）")
+            return
+        src, _ = QFileDialog.getOpenFileName(
+            self, "选择要插入的图片", "",
+            "图片 (*.png *.jpg *.jpeg *.gif *.bmp)")
+        if not src:
+            return
+        rel = ops.copy_image(src, self._images_dir, self._config_dir)
+        self._insert_at(ops.new_image_block(rel), "图片")
+
+    def _delete_current(self):
+        if self._cur is None:
+            QMessageBox.information(self, "提示", "请先在左侧选择一个块（章标题不能删除）")
+            return
+        idx = self._cur
+        if QMessageBox.question(
+                self, "确认删除",
+                f"确定删除块 #{idx}（{bm.label(self.blocks[idx])}）吗？"
+                "删除后可用「撤销结构操作」恢复。") \
+                != QMessageBox.StandardButton.Yes:
+            return
+        blk = self.blocks.pop(idx)
+        self._shift_marks_down(idx)
+        self._history.append(("del", idx, blk))
+        self._cur = None
+        self._rebuild_tree()
+        if self.blocks:
+            self._select_idx(min(idx, len(self.blocks) - 1))
+        self.status.emit(f"已删除块 #{idx}（可撤销）")
+
+    def _undo(self):
+        if not self._history:
+            self.status.emit("没有可撤销的结构操作")
+            return
+        op = self._history.pop()
+        select = None
+        if op[0] == "ins":
+            pos = op[1]
+            self.blocks.pop(pos)
+            self._originals.pop(pos, None)
+            for k in sorted(k for k in self._originals if k > pos):
+                self._originals[k - 1] = self._originals.pop(k)
+            self._ai_changed = {k - 1 if k > pos else k
+                                for k in self._ai_changed if k != pos}
+            select = min(pos, len(self.blocks) - 1)
+        elif op[0] == "del":
+            pos, blk = op[1], op[2]
+            self.blocks.insert(pos, blk)
+            self._shift_marks_up(pos)
+            select = pos
+        elif op[0] == "conv":
+            idx, old = op[1], op[2]
+            self.blocks[idx] = old
+            select = idx
+        elif op[0] == "ai":
+            self.blocks = list(op[1])
+            self._ai_changed.clear()
+        self._cur = None
+        self._rebuild_tree()
+        if select is not None and 0 <= select < len(self.blocks):
+            self._select_idx(select)
+        left = len(self._history)
+        self.status.emit(f"已撤销上一步结构操作（历史剩 {left} 步）")
+
     # ---------------- AI 操作 ----------------
     def run_ai_structure(self):
         """公开入口：供主窗口在「AI 模式」解析完成后自动触发首轮结构修正。"""
@@ -395,6 +572,7 @@ class ReviewPage(QWidget):
             # 修正前把将被替换的块备份（已有更早的手动改动备份则保留更早版本）
             for idx in result.changed:
                 self._originals.setdefault(idx, self.blocks[idx])
+            self._history.append(("ai", list(self.blocks)))
             self.blocks = result.blocks
             self._ai_changed = set(result.changed)
             self._cur = None
