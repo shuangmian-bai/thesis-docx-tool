@@ -58,6 +58,11 @@ def render(results: List[CompareResult], title: str = "闭环测试报告") -> s
           <div style="background:#fafafa;padding:12px 16px;border-bottom:1px solid #eee">
             <strong>{fname}</strong>
             <span style="float:right;color:{status_color}">{status}</span>
+            <div style="font-size:12px;color:#888;margin-top:6px;line-height:1.6">
+              原文：{html.escape(r.src_path)}<br>
+              成品：{html.escape(r.out_path)}<br>
+              人工审核：直接打开两份 Word 对照，下表为机读差异清单
+            </div>
           </div>
           <table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead>

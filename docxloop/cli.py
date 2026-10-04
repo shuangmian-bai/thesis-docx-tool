@@ -27,7 +27,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="闭环测试引擎（哈希隔离，支持多线程）")
     ap.add_argument("input", help="输入 docx 文件 / 文件夹 / 16位哈希")
     ap.add_argument("--template", default=None,
-                    help="模板 docx 路径（默认 config/template.docx）")
+                    help="模板 docx 路径；默认每个输入文件自己作自己的模板"
+                         "（闭环验证拆解→重建的无损性，模板与输入同源）")
     ap.add_argument("--output", default=None,
                     help="HTML 报告输出路径（默认 .cache/loop_report.html）")
     ap.add_argument("--no-reuse", action="store_true",
@@ -35,17 +36,18 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    template = args.template or os.path.join(here, "config", "template.docx")
-    if not os.path.exists(template):
+    template = os.path.abspath(args.template) if args.template else None
+    if template and not os.path.exists(template):
         print(f"模板不存在：{template}", file=sys.stderr)
         return 1
 
     from docxloop.engine import resolve_input, run_batch
 
     # 先判断输入是否可解析
+    from docxflow.workdir import is_hash16, resolve_hash
     if not resolve_input(args.input) and not os.path.isdir(args.input):
         # 可能是哈希但工作目录不存在，或文件不存在
-        if len(args.input) == 16 and all(c in "0123456789abcdef" for c in args.input.lower()):
+        if is_hash16(args.input):
             print(f"哈希 {args.input} 对应的工作目录不存在，请先传入文件路径",
                   file=sys.stderr)
         else:
@@ -53,7 +55,7 @@ def main(argv=None):
         return 1
 
     print(f"输入: {args.input}")
-    print(f"模板: {template}")
+    print(f"模板: {template or '每个输入文件本身'}")
     results = run_batch([args.input], template, reuse=not args.no_reuse)
 
     if not results:
@@ -65,6 +67,9 @@ def main(argv=None):
         status = "通过" if r.passed else "未通过"
         print(f"  [{status}] {os.path.basename(r.src_path)}: "
               f"{r.total} 处差异（{r.unexpected} 非预期 / {r.total - r.unexpected} 预期）")
+        # 人工验收入口：给出参与对比的两份 Word 完整路径，可直接打开逐项核对
+        print(f"      原文: {r.src_path}")
+        print(f"      成品: {r.out_path}")
 
     out_path = args.output or os.path.join(here, ".cache", "loop_report.html")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)

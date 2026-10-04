@@ -26,11 +26,15 @@ TOC_PAGES = os.path.join(HERE, "output", "toc_pages.json")
 LEADER_RUN = re.compile(r"\.{4,}")
 
 
-def outline():
-    """按文档顺序取出各章的 # 与 ## 标题。"""
+def outline(chap_dir=CHAP_DIR):
+    """按文档顺序取出各章的 # 与 ## 标题。
+
+    chap_dir 默认为全局 config/章节/（MD 路线）；Word 路线/闭环的
+    哈希工作目录模式由调用方传入工作目录下的 章节/，避免读到别篇论文。
+    """
     items = []
-    for fn in sorted(f for f in os.listdir(CHAP_DIR) if f.endswith(".md")):
-        with open(os.path.join(CHAP_DIR, fn), encoding="utf-8") as fh:
+    for fn in sorted(f for f in os.listdir(chap_dir) if f.endswith(".md")):
+        with open(os.path.join(chap_dir, fn), encoding="utf-8") as fh:
             for ln in fh:
                 m = re.match(r"^(#{1,2})\s+(.*?)\s*$", ln)
                 if m:
@@ -72,17 +76,37 @@ def find_body_start(pages, items):
 
 
 def main(argv=None):
-    args = argv if argv is not None else sys.argv[1:]
+    args = list(argv if argv is not None else sys.argv[1:])
     if not args:
         raise SystemExit(__doc__)
-    pdf = args[0]
+    # 可选参数：--chap-dir 章节目录 / --out 页码表输出路径（默认全局位置，
+    # 哈希工作目录模式由编排层传入工作目录内路径，防止多论文互相污染）
+    chap_dir = CHAP_DIR
+    out_path = TOC_PAGES
+    positional = []
+    skip = False
+    for i, a in enumerate(args):
+        if skip:
+            skip = False
+            continue
+        if a == "--chap-dir" and i + 1 < len(args):
+            chap_dir = args[i + 1]
+            skip = True
+        elif a == "--out" and i + 1 < len(args):
+            out_path = args[i + 1]
+            skip = True
+        else:
+            positional.append(a)
+    if not positional:
+        raise SystemExit(__doc__)
+    pdf = positional[0]
     if not os.path.isabs(pdf):
         pdf = os.path.join(HERE, pdf)
     if not os.path.exists(pdf):
         raise SystemExit(f"找不到 PDF：{pdf}")
 
     pages = page_texts(pdf)
-    items = outline()
+    items = outline(chap_dir)
     start = find_body_start(pages, items)
     print(f"PDF 共 {len(pages)} 页（末页可能为空）；正文起始于 PDF 第 {start + 1} 页")
     print(f"大纲共 {len(items)} 条标题（章 {sum(1 for lv, _ in items if lv == 1)}，"
@@ -104,11 +128,11 @@ def main(argv=None):
         cursor = found
         result[title] = found - start + 1
 
-    os.makedirs(os.path.dirname(TOC_PAGES), exist_ok=True)
-    with open(TOC_PAGES, "w", encoding="utf-8") as fh:
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as fh:
         json.dump(result, fh, ensure_ascii=False, indent=1)
         fh.write("\n")
-    print(f"已写 {os.path.relpath(TOC_PAGES, HERE)}：{len(result)} 条页码")
+    print(f"已写 {os.path.relpath(out_path, HERE)}：{len(result)} 条页码")
     if missing:
         print(f"[注意] {len(missing)} 条标题未在 PDF 中定位到，页码将留空：")
         for t in missing[:10]:

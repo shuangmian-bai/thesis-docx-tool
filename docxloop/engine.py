@@ -1,149 +1,77 @@
-"""闭环引擎：对输入 docx 执行 convert → build，然后全盘对比。
+"""闭环引擎：对输入 docx 跑应用层流水线，然后全盘对比原文档与成品。
 
-每个输入文件用其内容 SHA256 哈希（前 16 位）作为隔离标识，创建独立工作目录，
-避免多个文件共享 config/章节、config/images 造成污染，支持多线程并发。
+本模块**不含任何流程逻辑**：convert/build/封面提取/章节写入等一律调用
+docxflow 应用层的 run_pipeline()（与命令行 run、GUI 构建同一条流水线），
+这里只负责「输入解析 → 触发流水线 → 全盘对比」。
 
-工作目录结构（默认 .cache/loop_work/）：
-    .cache/loop_work/
-    ├── index.json              # {哈希: 原文件名}
-    └── <hash16>/
-        ├── src.md              # convert 产物
-        ├── images/             # 抽取的图片
-        ├── 章节/               # build 输入
-        ├── output/             # build 输出
-        └── toc.json            # 目录页码
+哈希隔离与索引复用 docxflow.workdir 的唯一实现（与 run/gui 共用
+.cache/run_work/），同一论文在三条入口下看到的是同一个工作目录。
 """
-import hashlib
-import json
 import os
-import shutil
-from typing import Dict, List, Optional
+from typing import List, Optional
 
+from docxflow.workdir import (file_hash, is_hash16, load_index, resolve_hash,
+                              source_for_hash, work_dir_for)
 from docxloop.compare import CompareResult, compare
-
-#: 闭环工作根目录
-WORK_ROOT = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    ".cache", "loop_work")
-
-
-def file_hash(path: str) -> str:
-    """计算文件 SHA256，取前 16 位十六进制。"""
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()[:16]
-
-
-def work_dir_for(hash16: str) -> str:
-    """返回哈希对应的工作目录路径。"""
-    return os.path.join(WORK_ROOT, hash16)
-
-
-def load_index() -> Dict[str, str]:
-    """加载哈希索引文件。"""
-    idx_path = os.path.join(WORK_ROOT, "index.json")
-    if os.path.exists(idx_path):
-        with open(idx_path, encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-
-def save_index(index: Dict[str, str]):
-    """保存哈希索引文件。"""
-    os.makedirs(WORK_ROOT, exist_ok=True)
-    with open(os.path.join(WORK_ROOT, "index.json"), "w", encoding="utf-8") as f:
-        json.dump(index, f, ensure_ascii=False, indent=2)
 
 
 def resolve_input(spec: str) -> Optional[str]:
     """把命令行参数解析为实际文件路径。
 
     spec 可以是文件路径或 16 位哈希：
-    - 文件路径：计算哈希，创建/定位工作目录，返回原路径
-    - 哈希：从索引查原文件名；若工作目录不存在，返回 None
+    - 文件路径：返回绝对路径（流水线内部会算哈希定位工作目录）
+    - 哈希：从索引查原文件路径；工作目录或原文件不存在时返回 None
     """
-    # 16 位十六进制视为哈希
-    if len(spec) == 16 and all(c in "0123456789abcdef" for c in spec.lower()):
-        index = load_index()
-        orig = index.get(spec)
-        if orig and os.path.exists(work_dir_for(spec)):
-            return orig
-        return None
-    # 文件路径
+    if is_hash16(spec):
+        h = spec.lower()
+        if resolve_hash(h) is None:
+            return None
+        return source_for_hash(h)
     if os.path.isfile(spec) and spec.endswith(".docx"):
         return os.path.abspath(spec)
     return None
 
 
-def run_closed_loop(src_path: str, template_path: str,
+def run_closed_loop(src_path: str, template_path: Optional[str] = None,
                     reuse: bool = True) -> CompareResult:
     """对单个 docx 跑闭环，返回对比结果。
 
+    template_path 为 None 时用输入文件本身作模板——闭环测试验证的是
+    「拆解→重建」的无损性，模板与输入同源才能排除格式差异干扰。
     reuse=True 时，若哈希对应的工作目录已存在且有输出 docx，直接用已有产物对比
-    （适合反复调整对比引擎）；False 时强制重新 convert→build。
+    （适合反复调整对比引擎）；False 时强制重跑流水线。
     """
+    template_path = template_path or src_path
     h = file_hash(src_path)
     wdir = work_dir_for(h)
-    os.makedirs(wdir, exist_ok=True)
-
-    # 记录索引（存绝对路径，哈希复用时能直接定位原文件）
-    src_path = os.path.abspath(src_path)
-    index = load_index()
-    index[h] = src_path
-    save_index(index)
 
     out_docx = None
     if reuse:
         out_dir = os.path.join(wdir, "output")
         if os.path.isdir(out_dir):
-            for f in os.listdir(out_dir):
+            for f in sorted(os.listdir(out_dir)):
                 if f.endswith(".docx"):
                     out_docx = os.path.join(out_dir, f)
-                    break
 
     if out_docx is None:
-        # ── convert ──
-        from docxconvert.cli import convert_to, extract_cover, extract_template_title
-        from docxbuild.docinfo import VERSION, save_cover_to
-        md_out = os.path.join(wdir, "src.md")
-        img_dir = os.path.join(wdir, "images")
-        os.makedirs(img_dir, exist_ok=True)
-        # rel_base=wdir：md 里图片引用写成 images/xxx.png，build 时 IMG_BASE=wdir
-        convert_to(src_path, md_out, img_dir, strip_front=True, rel_base=wdir)
-
-        # 提取封面字段存到工作目录 cover.json（与 docxflow Word 路线一致），
-        # 每个论文独立，不污染全局；build 时通过 cover_path 加载
-        cover = extract_cover(src_path)
-        tpl_title = extract_template_title(src_path)
-        save_cover_to(os.path.join(wdir, "cover.json"), {
-            "title": cover.get("成果名称", ""),
-            "version": VERSION,
-            "template_title": tpl_title,
-            "cover": cover,
-        })
-
-        # ── build ──
-        from docxbuild.cli import build
-        chap_dir = os.path.join(wdir, "章节")
-        os.makedirs(chap_dir, exist_ok=True)
-        shutil.copy(md_out, os.path.join(chap_dir, "00_src.md"))
-        out_docx = build(
-            template=template_path,
-            chap_dir=chap_dir,
-            output_dir=os.path.join(wdir, "output"),
-            toc_pages=os.path.join(wdir, "toc.json"),
-            images_base=wdir,
-            cover_path=os.path.join(wdir, "cover.json"),
-        )
+        # 走应用层唯一流水线（与 run 行为完全一致，仅模板与输出落点不同）；
+        # no_audit：audit 是只读报告且对比已由本模块负责，跑两遍没有信息量；
+        # force：--no-reuse 明确要求重新拆解，允许覆盖已有产物；
+        # copy_to_output：闭环产物留在工作目录即可，不占用全局 output/
+        from docxflow.cli import run_pipeline
+        out_docx = run_pipeline(
+            docx=src_path, work_dir=wdir, template=template_path,
+            force=True, no_audit=True, copy_to_output=False)
 
     return compare(src_path, out_docx)
 
 
-def run_batch(input_specs: List[str], template_path: str,
+def run_batch(input_specs: List[str], template_path: Optional[str] = None,
               reuse: bool = True) -> List[CompareResult]:
-    """批量跑闭环。input_specs 可以是文件、文件夹或哈希。"""
+    """批量跑闭环。input_specs 可以是文件、文件夹或哈希。
+
+    template_path 为 None 时每个输入文件各自作自己的模板。
+    """
     paths = []
     for spec in input_specs:
         resolved = resolve_input(spec)

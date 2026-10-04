@@ -91,12 +91,10 @@ class MainWindow(QMainWindow):
 
     # ---------------- 阶段一：解析 ----------------
     def _start_parse(self, params: dict):
-        # 用 docx 内容哈希创建隔离工作目录，与命令行 run 行为一致，
-        # 避免多个论文共享 config/章节、config/images 造成污染。
-        from docxflow.cli import _file_hash, RUN_WORK_ROOT
-        h = _file_hash(params["docx"])
-        work_dir = os.path.join(RUN_WORK_ROOT, h)
-        os.makedirs(work_dir, exist_ok=True)
+        # 工作目录的哈希计算、创建与索引登记统一由应用层 docxflow.workdir
+        # 负责（与命令行 run、闭环测试共用同一套），GUI 不自行实现。
+        from docxflow.workdir import prepare_work_dir
+        work_dir = prepare_work_dir(params["docx"])
         base = os.path.splitext(os.path.basename(params["docx"]))[0]
         images_dir = os.path.join(work_dir, "images")
         md_target = os.path.join(work_dir, "src.md")
