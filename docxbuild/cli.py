@@ -15,8 +15,8 @@ styles.xml / numbering.xml / theme / fontTable 与字体设置。
     python3 main.py build
     python3 main.py build --template /path/to/其它模板.docx   # 换模板
 
-产物：`论文_v1_YYYYMMDD.docx`（日期取当天），并把各章合并为 `论文正文.md`。
-默认模板为同目录的 `template.docx`（使用者自备），可用 `--template` 覆盖。
+产物：`output/论文_v1_YYYYMMDD.docx`（日期取当天），并把各章合并为 `output/论文正文.md`。
+默认模板为 `config/template.docx`（使用者自备），可用 `--template` 覆盖。
 """
 import argparse
 import datetime
@@ -38,11 +38,13 @@ from docxbuild.template import (
     register_all, shrink_toc, tidy_frag,
 )
 
-CHAP_DIR = os.path.join(HERE, "章节")
-# 默认模板：本目录下的 template.docx（使用者自备，不入库）；也可用 --template 指定
-DEFAULT_TEMPLATE = os.path.join(HERE, "template.docx")
+CHAP_DIR = os.path.join(HERE, "config", "章节")
+# 默认模板：config/template.docx（使用者自备，不入库）；也可用 --template 指定
+DEFAULT_TEMPLATE = os.path.join(HERE, "config", "template.docx")
 # 目录页码表：由 toc_pages.py 从渲染出的 PDF 里提取，缺失时目录页码留空
-TOC_PAGES = os.path.join(HERE, "toc_pages.json")
+TOC_PAGES = os.path.join(HERE, "output", "toc_pages.json")
+# 产物输出目录
+OUTPUT_DIR = os.path.join(HERE, "output")
 
 
 def main(argv=None):
@@ -54,8 +56,9 @@ def main(argv=None):
     TEMPLATE = args.template
 
     today = datetime.date.today().strftime("%Y%m%d")
-    out_docx = os.path.join(HERE, f"论文_{VERSION}_{today}.docx")
-    out_md = os.path.join(HERE, "论文正文.md")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    out_docx = os.path.join(OUTPUT_DIR, f"论文_{VERSION}_{today}.docx")
+    out_md = os.path.join(OUTPUT_DIR, "论文正文.md")
 
     if not os.path.isdir(CHAP_DIR):
         raise SystemExit(f"找不到章节目录：{os.path.relpath(CHAP_DIR, HERE)}（请在该目录下放 *.md）")
@@ -74,7 +77,7 @@ def main(argv=None):
 
     # ── 2. 读模板 ──
     if not os.path.exists(TEMPLATE):
-        raise SystemExit(f"找不到模板：{os.path.relpath(TEMPLATE, HERE)}（请放到 template.docx 或用 --template 指定）")
+        raise SystemExit(f"找不到模板：{os.path.relpath(TEMPLATE, HERE)}（请放到 config/template.docx 或用 --template 指定）")
     zin = zipfile.ZipFile(TEMPLATE)
     raw = zin.read("word/document.xml").decode("utf-8")
     ns, root_tag = declared_namespaces(raw)
@@ -129,12 +132,12 @@ def main(argv=None):
     # 模板的示例签名是模板自带的，属保留区的一部分。关系文件给出它的 rId，
     # 模板 XML 给出它的浮动尺寸，两处都要改（见 template.fit_signature）。
     rels_xml = zin.read("word/_rels/document.xml.rels").decode("utf-8")
-    sign_path = os.path.join(HERE, "images", "signature.png")
+    sign_path = os.path.join(HERE, "config", "images", "signature.png")
     if not os.path.exists(sign_path):
         raise SystemExit(f"签名图不存在：{os.path.relpath(sign_path, HERE)}")
     sign_cx, sign_cy = fit_signature(keep, rels_xml, sign_path)
     sign_png = open(sign_path, "rb").read()
-    print(f"  承诺书签名已换为 images/signature.png"
+    print(f"  承诺书签名已换为 config/images/signature.png"
           f"（{sign_cx / 360000:.2f} × {sign_cy / 360000:.2f} cm）")
 
     # ── 5. 生成正文，并登记图片关系 ──
@@ -167,9 +170,10 @@ def main(argv=None):
                 body_xml.append(table_xml(blk[1]))
                 n_tbl += 1
             elif kind == "img":
-                path = os.path.normpath(os.path.join(HERE, blk[1]))
+                # 图片路径相对于 config/ 目录（章节与图片都在 config/ 下）
+                path = os.path.normpath(os.path.join(HERE, "config", blk[1]))
                 if not os.path.exists(path):
-                    raise SystemExit(f"插图不存在：{blk[1]}")
+                    raise SystemExit(f"插图不存在：{blk[1]}（应放在 config/images/ 下）")
                 name = os.path.basename(path)
                 rid = f"rId{next_rel}"
                 next_rel += 1

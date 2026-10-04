@@ -25,38 +25,38 @@ pip install Pillow
 ### 1. 准备模板与封面信息
 
 ```bash
-# 把学校论文模板放到本目录，命名为 template.docx（不入库）
-cp /path/to/学校论文模板.docx template.docx
+# 把学校论文模板放到 config/，命名为 template.docx（不入库）
+cp /path/to/学校论文模板.docx config/template.docx
 
 # 复制封面信息示例，填写真实信息（cover.json 不入库）
-cp cover.example.json cover.json
-# 编辑 cover.json，填入题目、姓名、学号等
+cp config/cover.example.json config/cover.json
+# 编辑 config/cover.json，填入题目、姓名、学号等
 ```
 
 ### 2. 撰写或拆解论文
 
-方式一：直接写 Markdown。在 `章节/` 下按章建文件，如 `01_设计思路.md`，格式见下「块模型」。
+方式一：直接写 Markdown。在 `config/章节/` 下按章建文件，如 `01_设计思路.md`，格式见下「块模型」。
 
 方式二：把已写好的 Word 论文拆解为 Markdown：
 
 ```bash
 python3 main.py convert 用户论文.docx --strip-front
-# 生成 用户论文.md + 用户论文_images/，把内容整理到 章节/ 下
+# 生成 output/用户论文.md + output/用户论文_images/，把内容整理到 config/章节/ 下
 ```
 
 ### 3. 生成 Word 论文
 
 ```bash
 python3 main.py build
-# 生成 论文_v1_YYYYMMDD.docx（日期取当天）
+# 生成 output/论文_v1_YYYYMMDD.docx（日期取当天）
 ```
 
 ### 4. 回填目录页码（两遍构建）
 
 ```bash
 python3 main.py build                                    # 第一遍：目录页码留空
-soffice --headless --convert-to pdf 论文_v1_*.docx       # 转 PDF
-python3 main.py toc 论文_v1_*.pdf                        # 量页码 → toc_pages.json
+soffice --headless --convert-to pdf output/论文_v1_*.docx # 转 PDF
+python3 main.py toc output/论文_v1_*.pdf                  # 量页码 → output/toc_pages.json
 python3 main.py build                                    # 第二遍：目录带上页码
 ```
 
@@ -76,9 +76,9 @@ python3 main.py audit --list           # 列出全部检查项
 python3 main.py build [--template 模板.docx]
 ```
 
-- 默认模板为同目录 `template.docx`，可用 `--template` 指定其它模板。
-- 产物：`论文_v1_YYYYMMDD.docx` + `论文正文.md`（各章合并视图）。
-- 封面字段从 `cover.json` 读取；承诺书签名图取自 `images/signature.png`（自备）。
+- 默认模板为 `config/template.docx`，可用 `--template` 指定其它模板。
+- 产物：`output/论文_v1_YYYYMMDD.docx` + `output/论文正文.md`（各章合并视图）。
+- 封面字段从 `config/cover.json` 读取；承诺书签名图取自 `config/images/signature.png`（自备）。
 
 ### convert
 
@@ -96,7 +96,7 @@ python3 main.py convert 用户论文.docx [-o 输出.md] [--images-dir 图片目
 python3 main.py audit [检查项...] [--product 成品.docx] [--template 模板.docx] [-v] [--strict] [--list]
 ```
 
-- 默认成品取本目录下 mtime 最新的 `*.docx`（排除 `template.docx`）。
+- 默认成品取 `output/` 下 mtime 最新的 `*.docx`（排除 `config/template.docx`）。
 - 退出码：有「注意」或「失败」项为 1；`--strict` 时「有意偏离」也算失败。
 
 ### toc
@@ -106,7 +106,7 @@ python3 main.py toc 成品.pdf
 ```
 
 - 需要系统安装 `poppler-utils`（提供 `pdftotext`）。
-- 把各级标题的页码写入 `toc_pages.json`，供 `build` 第二遍使用。
+- 把各级标题的页码写入 `output/toc_pages.json`，供 `build` 第二遍使用。
 
 ## 块模型（build 与 convert 共用）
 
@@ -137,12 +137,12 @@ main.py  ── 统一入口，按子命令分发
 
 | 模块 | 职责 |
 |---|---|
-| `docinfo` | 论文著录信息：从 `cover.json` 读题目、封面字段、版本号（默认占位符） |
+| `docinfo` | 论文著录信息：从 `config/cover.json` 读题目、封面字段、版本号（默认占位符） |
 | `layout` | 版式常量：正文区宽度、插图尺寸上限、签名图宽度 |
 | `mdparse` | Markdown → 块序列（纯文本，不碰 XML） |
 | `fragments` | 块 → OOXML 片段（段落、标题、图、表、代码、参考文献、图题） |
 | `template` | 模板骨架处理：命名空间登记、封面填充、目录重建、签名图替换、样式清理 |
-| `toc_pages` | 从渲染出的 PDF 反查各级标题页码，写入 `toc_pages.json` |
+| `toc_pages` | 从渲染出的 PDF 反查各级标题页码，写入 `output/toc_pages.json` |
 | `cli` | 主流程编排（`main(argv)`） |
 
 **核心思路**：保留模板骨架（封面、承诺书、目录域、页眉页脚、styles/numbering/theme），
@@ -202,7 +202,7 @@ main.py  ── 统一入口，按子命令分发
 
 ## 常见问题
 
-- **build 报找不到模板**：把模板放到 `template.docx` 或用 `--template` 指定。
-- **build 报找不到签名图**：在 `images/signature.png` 放签名图，或从 `cover.json`/模板调整。
+- **build 报找不到模板**：把模板放到 `config/template.docx` 或用 `--template` 指定。
+- **build 报找不到签名图**：在 `config/images/signature.png` 放签名图，或从 `config/cover.json`/模板调整。
 - **convert 后标题层级不对**：用户 docx 的标题样式可能不是模板的 `1`/`2`/`3`/`4`，
   工具会尝试匹配 `Heading 1` 等常见样式名；匹配不到的当正文处理，可手工调整 MD。

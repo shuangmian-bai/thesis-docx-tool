@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from docxaudit import HERE
 
-CHAP_DIR = os.path.join(HERE, "章节")
+CHAP_DIR = os.path.join(HERE, "config", "章节")
 
 OK, EXPECTED, WARN, FAIL = "ok", "expected", "warn", "fail"
 # 状态标记一律用纯文字，不用符号（开源子项目硬规则：禁止装饰符号）
@@ -107,21 +107,21 @@ class Ctx:
 def find_template(path=None):
     """定位模板 docx。
 
-    默认取本目录下的 `template.docx`（使用者自备，不入库）；也可通过 `--template` 指定。
+    默认取 `config/template.docx`（使用者自备，不入库）；也可通过 `--template` 指定。
     """
     if path:
         p = path if os.path.isabs(path) else os.path.abspath(path)
     else:
-        p = os.path.join(HERE, "template.docx")
+        p = os.path.join(HERE, "config", "template.docx")
     if not os.path.exists(p):
-        raise SystemExit(f"找不到模板：{p}（请自备模板并命名为 template.docx，或用 --template 指定）")
+        raise SystemExit(f"找不到模板：{p}（请自备模板放到 config/template.docx，或用 --template 指定）")
     return p
 
 
 def find_product(path=None):
     """定位成品 docx。
 
-    默认取本目录下 **mtime 最新**的 `*.docx`（排除 template.docx）。
+    默认取 `output/` 下 **mtime 最新**的 `*.docx`。
     按 mtime 而非文件名字典序——`v10` 字典序排在 `v9` 前面，会取错。
     """
     if path:
@@ -129,10 +129,13 @@ def find_product(path=None):
         if not os.path.exists(p):
             raise SystemExit(f"找不到成品：{p}")
         return p
-    cands = [os.path.join(HERE, f) for f in os.listdir(HERE)
-             if f.lower().endswith(".docx") and f.lower() != "template.docx"]
+    out_dir = os.path.join(HERE, "output")
+    if not os.path.isdir(out_dir):
+        raise SystemExit(f"output/ 目录不存在，先跑 build 子命令")
+    cands = [os.path.join(out_dir, f) for f in os.listdir(out_dir)
+             if f.lower().endswith(".docx")]
     if not cands:
-        raise SystemExit(f"{HERE} 下没有成品 docx，先跑 build 子命令")
+        raise SystemExit(f"output/ 下没有成品 docx，先跑 build 子命令")
     return max(cands, key=os.path.getmtime)
 
 

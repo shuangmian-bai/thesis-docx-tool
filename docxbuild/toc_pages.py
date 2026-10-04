@@ -19,8 +19,8 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHAP_DIR = os.path.join(HERE, "章节")
-TOC_PAGES = os.path.join(HERE, "toc_pages.json")
+CHAP_DIR = os.path.join(HERE, "config", "章节")
+TOC_PAGES = os.path.join(HERE, "output", "toc_pages.json")
 
 # 目录页的判据：带点前导符的目录项会渲染出成串的点
 LEADER_RUN = re.compile(r"\.{4,}")
@@ -104,6 +104,7 @@ def main(argv=None):
         cursor = found
         result[title] = found - start + 1
 
+    os.makedirs(os.path.dirname(TOC_PAGES), exist_ok=True)
     with open(TOC_PAGES, "w", encoding="utf-8") as fh:
         json.dump(result, fh, ensure_ascii=False, indent=1)
         fh.write("\n")

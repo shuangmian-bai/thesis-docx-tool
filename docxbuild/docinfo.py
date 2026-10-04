@@ -31,8 +31,8 @@ COVER = {
 #: 模板承诺书里出现的示例题目（用于定位替换）
 TEMPLATE_TITLE = "【待填：模板承诺书示例题目】"
 
-#: 同目录下的可选配置文件，填写后覆盖上面的占位符
-_COVER_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cover.json")
+#: config/cover.json，填写后覆盖上面的占位符
+_COVER_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config", "cover.json")
 
 
 def _load_cover_json():

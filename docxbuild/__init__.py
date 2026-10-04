@@ -9,7 +9,7 @@
 | `mdparse` | Markdown → 块序列（纯文本，不碰 XML） |
 | `fragments` | 块 → OOXML 片段（段落、图、表、代码、参考文献） |
 | `template` | 模板骨架处理（命名空间、封面、目录、文档属性、无用部件清理） |
-| `toc_pages` | 从渲染出的 PDF 反查各级标题页码，写入 `toc_pages.json` |
+| `toc_pages` | 从渲染出的 PDF 反查各级标题页码，写入 `output/toc_pages.json` |
 | `cli` | 主流程编排（`main()`） |
 
 依赖是单向的：`docinfo` / `layout` / `mdparse` 不依赖别人，`fragments` 用 `layout`

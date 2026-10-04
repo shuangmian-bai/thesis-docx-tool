@@ -55,7 +55,7 @@ def main(argv=None):
         raise SystemExit(f"文件不存在：{docx_path}")
 
     base = os.path.splitext(os.path.basename(docx_path))[0]
-    out_md = args.output or os.path.join(HERE, f"{base}.md")
+    out_md = args.output or os.path.join(HERE, "output", f"{base}.md")
     out_md = os.path.abspath(out_md)
     md_dir = os.path.dirname(out_md)
     images_dir = args.images_dir or os.path.join(md_dir, f"{base}_images")
