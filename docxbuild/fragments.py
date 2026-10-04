@@ -176,8 +176,13 @@ def table_xml(rows):
         keep = "" if ri == last else "<w:keepNext/>"
         for ci, cell in enumerate(row):
             tcpr = f'<w:tcPr><w:tcW w:w="{pcts[ci]}" w:type="pct"/><w:hideMark/></w:tcPr>'
-            body = (f'<w:p><w:pPr><w:pStyle w:val="ad"/>{keep}</w:pPr>'
-                    f'{runs_xml(cell)}</w:p>')
+            # 单元格内的 <br>（来自 markdown 表格换行）拆成多个段落，
+            # 避免被 esc 转义成字面量 <br>
+            paras = cell.split("<br>") if cell else [""]
+            body = "".join(
+                f'<w:p><w:pPr><w:pStyle w:val="ad"/>{keep}</w:pPr>'
+                f'{runs_xml(p)}</w:p>'
+                for p in paras)
             parts.append(f"<w:tc>{tcpr}{body}</w:tc>")
         parts.append("</w:tr>")
     parts.append("</w:tbl>")

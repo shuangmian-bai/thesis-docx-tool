@@ -124,8 +124,13 @@ def _outline_level(p):
         return None
 
 
-def _para_text(p):
-    """提取段落纯文本：处理 <w:t> / <w:tab> / <w:br>，合并多余空白。"""
+def _para_text(p, preserve_ws=False):
+    """提取段落纯文本：处理 <w:t> / <w:tab> / <w:br>。
+
+    <w:br> 是段落内软换行，Markdown 无对应概念，转成空格以保持段落边界不被
+    拆散（否则 mdparse 会把含 \\n 的段落按行切开，破坏闭环一致性）。
+    preserve_ws=True 时不合并空格（代码块需保留缩进）。
+    """
     parts = []
     for node in p.iter():
         tag = node.tag
@@ -134,9 +139,10 @@ def _para_text(p):
         elif tag == f"{W}tab":
             parts.append("\t")
         elif tag == f"{W}br":
-            parts.append("\n")
+            parts.append(" ")
     text = "".join(parts)
-    text = re.sub(r"[ \t]+", " ", text)
+    if not preserve_ws:
+        text = re.sub(r"[ \t]+", " ", text)
     return text.strip()
 
 
@@ -228,7 +234,7 @@ def parse_docx(docx_path):
                 continue
 
             if sid in code_ids:
-                code_buf.append(text)
+                code_buf.append(_para_text(child, preserve_ws=True))
                 continue
             flush_code()
 
