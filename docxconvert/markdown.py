@@ -59,6 +59,8 @@ def render(blocks):
                 out.append("| " + " | ".join(_cell(c) for c in r) + " |")
             out.append("")
         elif kind == "img":
-            out.append(f"![{blk[2]}]({blk[1]})")
+            cx, cy = blk[3], blk[4]
+            size = f"{{cx={cx},cy={cy}}}" if cx and cy else ""
+            out.append(f"![{blk[2]}]({blk[1]}){size}")
             out.append("")
     return "\n".join(out).rstrip() + "\n"

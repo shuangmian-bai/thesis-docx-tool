@@ -74,10 +74,12 @@ def parse_md(text):
             i += 1
             continue
 
-        # 图片：![说明](路径)
-        m = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)$", s)
+        # 图片：![说明](路径){cx=...,cy=...}（尺寸可选，EMU）
+        m = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)(?:\{cx=(-?\d+),cy=(-?\d+)\})?$", s)
         if m:
-            blocks.append(("img", m.group(2).strip(), m.group(1).strip()))
+            cx = int(m.group(3)) if m.group(3) else 0
+            cy = int(m.group(4)) if m.group(4) else 0
+            blocks.append(("img", m.group(2).strip(), m.group(1).strip(), cx, cy))
             i += 1
             continue
 

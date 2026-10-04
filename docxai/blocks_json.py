@@ -9,7 +9,7 @@ AI 只能读写 JSON（dict）结构，不能直接碰内部 tuple；本模块�
     ("p"|"quote"|"caption"|"ref"|"ol", 文本)
     ("code", [行文本, ...])
     ("table", [[单元格, ...], ...])
-    ("img", 图片路径, 图题文本)
+    ("img", 图片路径, 图题文本, cx, cy)  # cx/cy 为 EMU，0 表示按图片像素自适应
 
 其中 `ol` 是有序列表（1. 2. 3.）的**单个条目**：连续多个 ol 块在构建时
 归为同一个自动编号列表，拆成逐条目块是为了与块数护栏兼容（AI 只改分类，
@@ -22,7 +22,7 @@ AI 只能读写 JSON（dict）结构，不能直接碰内部 tuple；本模块�
     {"t":"ol","text":"..."}
     {"t":"code","lines":["..."]}
     {"t":"table","rows":[["..."]]}
-    {"t":"img","path":"images/x.png","caption":"..."}
+    {"t":"img","path":"images/x.png","caption":"...","cx":0,"cy":0}
 """
 from typing import Dict, List, Optional, Tuple
 
@@ -46,7 +46,8 @@ def block_to_dict(block: Block) -> Dict[str, object]:
     if kind == "table":
         return {"t": "table", "rows": [list(r) for r in block[1]]}
     if kind == "img":
-        return {"t": "img", "path": block[1], "caption": block[2]}
+        return {"t": "img", "path": block[1], "caption": block[2],
+                "cx": int(block[3]), "cy": int(block[4])}
     raise BlockSchemaError(f"未知块类型：{kind!r}")
 
 
@@ -69,7 +70,7 @@ def dict_to_block(d: Dict[str, object]) -> Block:
         return ("code", list(d["lines"]))
     if t == "table":
         return ("table", [list(r) for r in d["rows"]])
-    return ("img", d["path"], d["caption"])
+    return ("img", d["path"], d["caption"], int(d.get("cx", 0)), int(d.get("cy", 0)))
 
 
 def validate_block(d: object) -> List[str]:
@@ -107,6 +108,10 @@ def validate_block(d: object) -> List[str]:
             probs.append("img 的 path 必须是非空字符串")
         if not isinstance(d.get("caption"), str):
             probs.append("img 的 caption 必须是字符串")
+        for k in ("cx", "cy"):
+            v = d.get(k, 0)
+            if not isinstance(v, int) or isinstance(v, bool) or v < 0:
+                probs.append(f"img 的 {k} 必须是非负整数")
         return probs
     return [f"未知块类型 {t!r}（允许 h/p/quote/caption/ref/ol/code/table/img）"]
 

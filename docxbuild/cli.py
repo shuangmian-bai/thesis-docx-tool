@@ -183,7 +183,7 @@ def main(argv=None):
                 body_xml.append(heading_xml(blk[1], blk[2]))
             elif kind in ("p", "quote"):
                 # 模板正文里没有引用块这种结构，引用一律按普通正文段落排
-                body_xml.append(para_xml(blk[1], style="a0", jc="both"))
+                body_xml.append(para_xml(blk[1], style="a0"))
             elif kind == "caption":
                 # 表题排在表格上方，与整表绑成一块，避免表格被分页截断时表题留在上一页
                 body_xml.append(caption_xml(blk[1], keep_next=blk[1].startswith("表")))
@@ -209,7 +209,7 @@ def main(argv=None):
                     body_xml.append(list_item_xml(blk[1], cur_list_id))
                 else:
                     # 模板不支持自动编号：降级正文，不静默丢内容
-                    body_xml.append(para_xml(blk[1], style="a0", jc="both"))
+                    body_xml.append(para_xml(blk[1], style="a0"))
                     n_ol_fallback += 1
             elif kind == "img":
                 # 图片路径相对于 config/ 目录（章节与图片都在 config/ 下）
@@ -224,7 +224,7 @@ def main(argv=None):
                                 f'Type="http://schemas.openxmlformats.org/'
                                 f'officeDocument/2006/relationships/image" '
                                 f'Target="media/{name}"/>')
-                body_xml.append(image_xml(rid, path, name))
+                body_xml.append(image_xml(rid, path, name, blk[3], blk[4]))
                 if blk[2]:
                     body_xml.append(caption_xml(blk[2]))
                 n_img += 1

@@ -56,7 +56,8 @@ def new_block(kind: str) -> tuple:
 
 
 def new_image_block(rel_path: str, caption: str = "") -> tuple:
-    return ("img", rel_path, caption)
+    # cx/cy=0 表示构建时按图片像素自适应
+    return ("img", rel_path, caption, 0, 0)
 
 
 def copy_image(src: str, images_dir: str, config_dir: str) -> str:

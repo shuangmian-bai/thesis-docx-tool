@@ -59,8 +59,9 @@ def heading_xml(level, text):
 def caption_xml(text, keep_next=False):
     """图表标题：居中、加粗、中英文字体全由样式 aa 给。
 
-    模板的图表标题段落只挂 `<w:pStyle w:val="aa"/>`，段落属性一概不写；
-    再补 `jc` 与 `spacing` 属于多余的直接格式，与模板不符。
+    模板的题注段落只挂 `<w:pStyle w:val="aa"/>`，段落属性一概不写
+    （个别题注手动加了字号属模板特例，不在这里统一补）。
+    不补 `jc`、`spacing`、`sz` 等多余直接格式。
 
     `keep_next` 供**表题**用：表题排在表格上方，要与整表同页（见 `table_xml`）。
     图题不能加——它在图片下方，加 `keepNext` 会与后面的正文段落粘连，
@@ -189,15 +190,23 @@ def table_xml(rows):
     return "".join(parts)
 
 
-def image_xml(rid, path, name):
-    """居中插入图片，按内容宽度等比缩放。"""
+def image_xml(rid, path, name, cx=0, cy=0):
+    """居中插入图片。
+
+    cx/cy 为 EMU；若均为 0，则按图片像素（96 dpi）与页面可用宽高自适应缩放。
+    若传入了 cx/cy（来自模板原文档的 <wp:extent>），则直接使用该尺寸，
+    保证 convert→build 闭环后图片显示尺寸与原文档一致。
+    """
     from PIL import Image
-    with Image.open(path) as im:
-        px_w, px_h = im.size
-    # 按 96 dpi 换算，再按可用宽度/高度收缩
-    cx, cy = px_w * 9525, px_h * 9525
-    scale = min(MAX_IMG_W / cx, MAX_IMG_H / cy, 1.0)
-    cx, cy = int(cx * scale), int(cy * scale)
+    if cx and cy:
+        cx, cy = int(cx), int(cy)
+    else:
+        with Image.open(path) as im:
+            px_w, px_h = im.size
+        # 按 96 dpi 换算，再按可用宽度/高度收缩
+        cx, cy = px_w * 9525, px_h * 9525
+        scale = min(MAX_IMG_W / cx, MAX_IMG_H / cy, 1.0)
+        cx, cy = int(cx * scale), int(cy * scale)
     i = next_id()
     return (
         # 只写 jc=center：模板的插图段落也这么写，且不再补 spacing（同图题段落，

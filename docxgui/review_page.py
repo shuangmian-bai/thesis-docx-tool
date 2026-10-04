@@ -370,7 +370,7 @@ class ReviewPage(QWidget):
             return
         blk = self.blocks[self._cur]
         if blk[0] == "img":
-            self._mutate(self._cur, ("img", blk[1], text))
+            self._mutate(self._cur, ("img", blk[1], text, blk[3], blk[4]))
             self._refresh_item(self._cur)
 
     def _resize_table(self, dr: int, dc: int):

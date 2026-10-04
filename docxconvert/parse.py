@@ -147,14 +147,25 @@ def _para_text(p, preserve_ws=False):
 
 
 def _para_image(p, rels):
-    """若段落含嵌入图片，返回其在 zip 内的路径（如 word/media/image1.png），否则 None。"""
+    """若段落含嵌入图片，返回 (zip内路径, cx, cy)；否则 None。
+
+    cx/cy 取自 <wp:extent>，单位 EMU；若段落无 extent 则返回 (path, 0, 0)，
+    构建时按图片像素自适应。
+    """
     for blip in p.iter(f"{A}blip"):
         rid = blip.get(f"{R}embed")
         if rid and rid in rels:
             target = rels[rid]
             if target.startswith("/"):
-                return target.lstrip("/")
-            return "word/" + target
+                path = target.lstrip("/")
+            else:
+                path = "word/" + target
+            cx = cy = 0
+            extent = p.find(f".//{{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}}extent")
+            if extent is not None:
+                cx = int(extent.get("cx", 0))
+                cy = int(extent.get("cy", 0))
+            return (path, cx, cy)
     return None
 
 
@@ -174,8 +185,9 @@ def _table_rows(tbl):
     return rows
 
 
-# 图题/表题的文本特征：以「图」或「表」开头，后跟数字编号
-_CAPTION_RE = re.compile(r"^\s*(?:\[)?(图|表)\s*[\d\-–—.]+")
+# 图题/表题的文本特征：以「图」或「表」开头，后跟数字编号，编号后必须有空格
+# （半角或全角）再接说明文字，避免把"表2-2中列举的类…"这类正文误判为题注。
+_CAPTION_RE = re.compile(r"^\s*(?:\[)?(图|表)\s*[\d\-–—.]+\s+")
 # 参考文献条目：[1] …
 _REF_RE = re.compile(r"^\s*\[\d+\]\s")
 
@@ -223,8 +235,9 @@ def parse_docx(docx_path):
             img = _para_image(child, rels)
             if img:
                 flush_code()
-                images[img] = os.path.basename(img)
-                blocks.append(("img", img, ""))
+                path, cx, cy = img
+                images[path] = os.path.basename(path)
+                blocks.append(("img", path, "", cx, cy))
                 continue
 
             text = _para_text(child)
@@ -276,7 +289,7 @@ def parse_docx(docx_path):
         if (blk[0] == "img" and i + 1 < len(blocks)
                 and blocks[i + 1][0] == "caption"
                 and blocks[i + 1][1].lstrip("[").startswith("图")):
-            merged.append(("img", blk[1], blocks[i + 1][1]))
+            merged.append(("img", blk[1], blocks[i + 1][1], blk[3], blk[4]))
             i += 2
         else:
             merged.append(blk)
