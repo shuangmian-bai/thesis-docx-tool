@@ -8,6 +8,9 @@ config/template.docx
 # 论文正文 Markdown 源（每章一个文件）
 config/章节/
 
+# 架构图 DSL 定义（个人论文素材）
+config/figures/
+
 # 论文插图与签名图（含个人数据）
 config/images/
 

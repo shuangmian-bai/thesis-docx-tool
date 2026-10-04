@@ -1,15 +1,17 @@
 # thesis-docx-tool
 
-论文 Word 排版与拆解工具。围绕一套共用的「块模型」，提供四个子命令，
+论文 Word 排版与拆解工具。围绕一套共用的「块模型」，提供五个子命令，
 覆盖论文从撰写到定稿的完整流程：
 
 - **build**：把按章拆分的 Markdown（`章节/*.md`）套用学校论文模板骨架，生成符合格式的 Word 论文
 - **convert**：把已写好的 Word 论文反向拆解为同格式 Markdown，便于二次编辑
 - **audit**：审计生成的 docx 是否贴合模板格式，避免排版跑偏
 - **toc**：从渲染出的 PDF 反查目录页码，回填 TOC 域
+- **fig**：把 `figures/*.md` 中用表格 DSL 描述的架构图渲染为 PNG，供 build 嵌入
 
 依赖仅 Python 标准库（`zipfile` / `xml.etree` / `re` / `json` / `subprocess`），
-**不用 python-docx、不用 pandoc**。`build` 的插图尺寸计算可选 `Pillow`，无图时可缺省。
+**不用 python-docx、不用 pandoc**。`build` 的插图尺寸计算可选 `Pillow`，无图时可缺省；
+`fig` 子命令需要 `Pillow` 渲染 PNG。
 
 ## 安装
 
@@ -108,6 +110,18 @@ python3 main.py toc 成品.pdf
 - 需要系统安装 `poppler-utils`（提供 `pdftotext`）。
 - 把各级标题的页码写入 `output/toc_pages.json`，供 `build` 第二遍使用。
 
+### fig
+
+```
+python3 main.py fig [图名]
+```
+
+- 把 `config/figures/` 下的 `*.md` 表格 DSL 渲染为 PNG，输出到 `config/images/`。
+- 不带参数时渲染全部图；带参数时只渲染指定图（省略 `.md` 后缀）。
+- 架构图采用**内容与样式分离**：DSL 只描述画什么、画在哪（坐标、尺寸、文本、语义色），
+  配色、字体、圆角、箭头等视觉样式由 `docxfig/render.py` 统一决定。
+- 详细语法见 `docxfig/README.md`。
+
 ## 块模型（build 与 convert 共用）
 
 `docxbuild.mdparse.parse_md()` 与 `docxconvert.parse.parse_docx()` 共用同一套块格式，
@@ -130,7 +144,8 @@ main.py  ── 统一入口，按子命令分发
   │
   ├─ build   → docxbuild/   （Markdown → docx + 目录页码回填）
   ├─ convert → docxconvert/ （docx → Markdown）
-  └─ audit   → docxaudit/   （docx 格式审计）
+  ├─ audit   → docxaudit/   （docx 格式审计）
+  └─ fig     → docxfig/     （架构图 DSL → PNG）
 ```
 
 ### docxbuild/ —— Markdown → docx
@@ -181,6 +196,18 @@ main.py  ── 统一入口，按子命令分发
 **审计思路**：把成品与模板逐部件、逐样式、逐段落地比对，差异分四类：
 `[通过]`、`[有意偏离]`（登记在 `EXPECTED_DIFFS`）、`[注意]`、`[失败]`。
 
+### docxfig/ —— 架构图生成
+
+| 模块 | 职责 |
+|---|---|
+| `render` | PIL 绘制引擎：画布、矩形、菱形、箭头、连线、文字、容器、裁切、保存 |
+| `parser` | 解析 `figures/*.md` 的表格 DSL（canvas + 元素表） |
+| `cli` | 主流程编排（`generate(name)` → 输出 PNG 到 `config/images/`） |
+
+**内容与样式分离**：DSL 只描述内容（画什么、坐标、尺寸、文本、语义色名），
+配色、字体、圆角、箭头等视觉样式集中在 `render.py` 的常量中，改样式只动代码。
+DSL 语法见 `docxfig/README.md`。
+
 ## 数据流闭环
 
 ```
@@ -196,7 +223,7 @@ main.py  ── 统一入口，按子命令分发
 | 依赖 | 用途 | 是否必需 |
 |---|---|---|
 | Python 3.8+ | 运行环境 | 必需 |
-| Pillow | build 时计算插图显示尺寸 | 无图可缺省 |
+| Pillow | build 时计算插图显示尺寸；fig 时渲染架构图 PNG | fig 必需，build 无图可缺省 |
 | LibreOffice (`soffice`) | docx 转 PDF（量目录页码用） | 量页码时必需 |
 | poppler-utils (`pdftotext`) | 从 PDF 提取文本量页码 | 量页码时必需 |
 

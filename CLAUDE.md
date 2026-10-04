@@ -5,24 +5,26 @@
 
 ## 定位
 
-`thesis-docx-tool` 是一套论文 Word 排版与拆解工具，做四件事：
+`thesis-docx-tool` 是一套论文 Word 排版与拆解工具，做五件事：
 
 1. **build**：把按章拆分的 Markdown（`章节/*.md`）套用学校论文模板骨架，生成符合格式的 Word 论文；
 2. **convert**：把用户已写好的 Word 论文反向拆解为同样格式的 Markdown，便于二次编辑；
 3. **audit**：审计生成的 docx 是否贴合模板格式，避免排版跑偏；
-4. **toc**：从渲染出的 PDF 反查目录页码，回填 TOC 域。
+4. **toc**：从渲染出的 PDF 反查目录页码，回填 TOC 域；
+5. **fig**：把 `figures/*.md` 中用表格 DSL 描述的架构图渲染为 PNG，供 build 嵌入。
 
 ## 目录结构
 
 ```
 thesis-docx-tool/
-├── main.py                 # 统一入口（build / convert / audit / toc 子命令）
+├── main.py                 # 统一入口（build / convert / audit / toc / fig 子命令）
 ├── config/                 # 素材与配置模块（个人数据在 .gitignore 排除）
 │   ├── cover.example.json  #   封面信息示例（复制为 cover.json 后填写）
 │   ├── cover.json          #   真实封面信息（不入库）
 │   ├── template.docx       #   学校论文模板（使用者自备，不入库）
 │   ├── 章节/               #   论文正文 Markdown 源（不入库）
-│   └── images/             #   论文插图与签名图（不入库）
+│   ├── figures/            #   架构图 DSL 定义（*.md，不入库，见 docxfig/README.md）
+│   └── images/             #   论文插图与签名图（不入库；fig 子命令生成的 PNG 也在此）
 ├── output/                 # 生成产物模块（.gitignore 排除，不入库）
 │   ├── 论文_*.docx         #   build 输出
 │   ├── 论文正文.md         #   合并后的正文
@@ -31,6 +33,7 @@ thesis-docx-tool/
 ├── docxconvert/            # docx → Markdown（逆向拆解），见 docxconvert/README.md
 ├── docxaudit/              # docx 格式审计（对比模板），见 docxaudit/README.md
 │   └── checks/             # 五项审计检查，见 docxaudit/checks/README.md
+├── docxfig/                # 架构图生成（Markdown 表格 DSL → PNG），见 docxfig/README.md
 ├── README.md               # 用法、流程、模块与块模型
 └── .gitignore              # 排除所有个人数据与生成产物
 ```
@@ -48,6 +51,7 @@ thesis-docx-tool/
 | `docxconvert/README.md` | 拆解链：解析要点、模块组成、与 build 的闭环关系 |
 | `docxaudit/README.md` | 审计：检查项、审计思路、EXPECTED_DIFFS 机制 |
 | `docxaudit/checks/README.md` | 五项检查清单、新增检查项步骤 |
+| `docxfig/README.md` | 架构图：表格 DSL 语法、渲染引擎、内容/样式分离约定 |
 
 ## 个人数据排除（开源硬规则）
 
@@ -58,7 +62,8 @@ thesis-docx-tool/
 | 封面信息 | 姓名、学号、班级、专业、指导老师 | `config/cover.json` 不入库，只留 `config/cover.example.json` 占位 |
 | 学校模板 | `template.docx`（可能含版权） | `config/template.docx` 使用者自备，不入库 |
 | 论文正文 | 章节 Markdown 源 | `config/章节/` 不入库 |
-| 论文插图 | 插图与签名图 | `config/images/` 不入库 |
+| 架构图定义 | 架构图 DSL（`*.md`） | `config/figures/` 不入库 |
+| 论文插图 | 插图与签名图（含 fig 生成的 PNG） | `config/images/` 不入库 |
 | 生成产物 | docx / pdf / 正文 md / 页码表 | `output/` 整个目录不入库 |
 
 提交前务必用 `git status` 确认暂存区不含上述文件。**开源仓库里出现个人数据视为泄露事故。**
@@ -78,9 +83,9 @@ thesis-docx-tool/
 
 以下规则仅适用于 `thesis-docx-tool/`：
 
-1. **标准库-only**：构建与拆解仅依赖 Python 标准库（`zipfile`、`xml.etree`、`struct` 等），
-   **不引入** `python-docx`、`pandoc` 等第三方库；`build` 插图尺寸可选 `Pillow`，
-   无 Pillow 时回退到默认尺寸。
+1. **标准库-only（build/convert/audit/toc）**：构建与拆解仅依赖 Python 标准库（`zipfile`、`xml.etree`、`struct` 等），
+   **不引入** `python-docx`、`pandoc` 等第三方库；`build` 插图尺寸可选 `Pillow`，无 Pillow 时回退到默认尺寸。
+   `fig` 子命令需要 `Pillow`（PIL）渲染 PNG。
 2. **根目录整洁**：根目录只放入口（`main.py`）、文档（`README.md`、`CLAUDE.md`）与
    `.gitignore`；素材与配置归 `config/`，生成产物归 `output/`（继承全局第 7 条）。
 3. **子包必须有 README.md**：每个模块目录必须有 `README.md`
