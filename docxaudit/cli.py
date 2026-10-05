@@ -9,13 +9,13 @@
 差异只在报告层降级：检查函数一律报 `WARN`，`EXPECTED_DIFFS` 表命中才改判为有意偏离。
 新增一处有意偏离时只改表，不动检查逻辑。
 
-用法：
+用法（内部模块，由 run 编排调用；独立调试用 python3 -m docxaudit.cli）：
 
-    python3 main.py audit                    # 等同 all，给总览
-    python3 main.py audit parts styles       # 只跑指定项
-    python3 main.py audit --list             # 列出全部检查项
-    python3 main.py audit -v body            # 展开通过项的细节
-    python3 main.py audit --product 论文_v1_20260916.docx    # 指定成品
+    python3 -m docxaudit.cli                    # 等同 all，给总览
+    python3 -m docxaudit.cli parts styles       # 只跑指定项
+    python3 -m docxaudit.cli --list             # 列出全部检查项
+    python3 -m docxaudit.cli -v body            # 展开通过项的细节
+    python3 -m docxaudit.cli --product 论文_v1_20260916.docx    # 指定成品
 
 退出码：有「需关注」或「失败」项时为 1；`--strict` 时连「有意偏离」也算失败，
 便于接进提交前钩子。

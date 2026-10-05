@@ -1,34 +1,20 @@
 #!/usr/bin/env python3
 """thesis-docx-tool 统一入口。
 
-日常使用只需一个子命令 **run**（一键流水线，端到端出成品）：
+面向用户只有两个子命令：
 
-    python3 main.py run                 # config/章节/*.md → 成品 Word
-    python3 main.py run 用户论文.docx    # 先拆解用户 Word，再出成品
+  run   一键流水线：从用户 docx（或已拆解的哈希工作目录）端到端生成成品 Word
+  gui   PyQt6 图形界面：选 docx 与模板 → 审阅/修复（可 AI 修正）→ 一键出稿
 
-其余七个是分步原子命令/图形入口，供单步调试、高级用途与交互式处理：
+run 的两种用法（同一入口，靠第一个参数区分）：
 
-  build     把 `章节/*.md` 合成 Word 论文（套用模板骨架）
-  convert   把用户撰写的论文 docx 拆解为 `章节/*.md` 格式的 Markdown
-  audit     审计成品 docx 是否贴合模板格式
-  loop      闭环测试：convert→build 后全盘对比原文档与输出文档，生成可视化报告
-  toc       从渲染出的 PDF 反查标题页码，写入 `toc_pages.json`
-  fig       从 `config/figures/*.md` 生成论文架构图（内容与样式分离）
-  gui       PyQt6 图形界面：选 docx 与处理模式（默认/AI）→ 审阅扁平化结果
-            → 手动或 AI 修正 → 一键 run 出稿（gui 需先 pip install -r requirements.txt 装 PyQt6）
+    python3 main.py run 论文.docx [--template 模板.docx]   # 拆解 word → md 存哈希工作目录 → 构建
+    python3 main.py run <16位哈希> [--template 模板.docx]  # 复用工作目录 md 重新构建
 
-用法：
+拆解产物落在哈希工作目录（.cache/run_work/<hash>/），修改章节后传哈希重跑即可。
+封面、承诺书、签名图等由模板骨架提供，工具不提取、不填充、不缺件报错。
 
-    python3 main.py run [用户论文.docx] [--template 模板.docx] [--no-fig/--no-toc/--no-audit]
-    python3 main.py gui
-    python3 main.py build [--template 模板.docx]
-    python3 main.py convert 用户论文.docx [--strip-front]
-    python3 main.py audit [parts styles ...] [--product 成品.docx]
-    python3 main.py loop <文件/文件夹/哈希> [--template 模板.docx] [--no-reuse]
-    python3 main.py toc 成品.pdf
-    python3 main.py fig [图名]
-
-各子命令的详细参数见 `python3 main.py <子命令> --help`。
+gui 需先 pip install -r requirements.txt 安装 PyQt6（run 不依赖 PyQt6）。
 """
 import sys
 
@@ -44,24 +30,6 @@ def main():
     if cmd == "run":
         from docxflow.cli import main as run_main
         return run_main(rest) or 0
-    elif cmd == "build":
-        from docxbuild.cli import main as build_main
-        return build_main(rest) or 0
-    elif cmd == "convert":
-        from docxconvert.cli import main as convert_main
-        return convert_main(rest) or 0
-    elif cmd == "audit":
-        from docxaudit.cli import main as audit_main
-        return audit_main(["audit_docx.py"] + rest)
-    elif cmd == "loop":
-        from docxloop.cli import main as loop_main
-        return loop_main(rest) or 0
-    elif cmd == "toc":
-        from docxbuild.toc_pages import main as toc_main
-        return toc_main(rest) or 0
-    elif cmd == "fig":
-        from docxfig.cli import main as fig_main
-        return fig_main(rest) or 0
     elif cmd == "gui":
         from docxgui.app import main as gui_main
         return gui_main(rest)

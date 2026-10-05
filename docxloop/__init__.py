@@ -7,9 +7,9 @@
 特殊元素（如承诺书签名图）由 `rules.py` 登记为「预期差异」，在报告里标注原因，
 **不是跳过检查**——所有元素都会被检查，只是差异被解释。
 
-用法：
-    python3 main.py loop 输入文件夹 [--template 模板.docx] [--output 报告.html]
-    python3 main.py loop 单个.docx
+用法（开发调试工具，非面向用户入口）：
+    python3 -m docxloop.cli 输入文件夹 [--template 模板.docx] [--output 报告.html]
+    python3 -m docxloop.cli 单个.docx
 """
 import os
 

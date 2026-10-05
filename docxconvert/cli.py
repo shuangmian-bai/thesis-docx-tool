@@ -1,10 +1,10 @@
-"""`convert_docx.py` 的主流程。
+"""docx → Markdown 拆解模块（内部模块，由 run 编排调用）。
 
 把用户论文 docx 拆解为 Markdown（与 `章节/*.md` 同格式）+ 图片目录，
-产物可直接喂给 `build_docx.py` 套回模板。
+产物可直接喂给 `docxbuild` 套回模板。
 
-核心流程在 `convert_to()`，命令行入口与一键流水线（docxflow）都调用它，
-区别只在产物落点：命令行默认落 `output/`，流水线直接落 `config/章节/`。
+核心流程在 `prepare_blocks()`（run 与 GUI 共用，拿到块供校对）与 `convert_to()`
+（独立拆解/开发调试，产物默认落 `output/`）。
 """
 import argparse
 import os

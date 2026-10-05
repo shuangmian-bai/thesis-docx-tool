@@ -8,7 +8,7 @@
 
 ## 用途
 
-`convert` 子命令的实现包。输入是一篇 Word 论文（`用户论文.docx`），输出是
+内部拆解模块（由 `run` 编排调用）。输入是一篇 Word 论文（`用户论文.docx`），输出是
 Markdown 文件 + 抽取出的图片目录。产出的 Markdown 可直接喂给 `docxbuild`
 重新套回模板，形成「撰写 → 拆解 → 二次编辑 → 重建」闭环。
 
@@ -42,21 +42,21 @@ Markdown 文件 + 抽取出的图片目录。产出的 Markdown 可直接喂给 
 
 ```python
 from docxconvert.cli import main, convert_to
-# 命令行入口（产物默认落 output/）
-main(["用户论文.docx", "--strip-front"])   # 等价于 python3 main.py convert 用户论文.docx --strip-front
-# 指定落点的核心函数（docxflow 用它把拆解产物直接落 config/章节/ 与 config/images/）
-# rel_base 必须传 config/：引用写成 images/...，与 build 以 config/ 为基准的解析对齐
-convert_to("用户论文.docx", "config/章节/用户论文.md",
-           "config/images/用户论文_images", strip_front=True,
-           rel_base="config")
+# 模块级入口（开发调试用，非面向用户命令）
+main(["用户论文.docx", "--strip-front"])
+# 指定落点的核心函数（独立拆解/开发调试；run 与 GUI 统一走 prepare_blocks）
+# rel_base 传工作目录：引用写成 images/...，与 build 以工作目录为基准解析对齐
+convert_to("用户论文.docx", "工作目录/用户论文.md",
+           "工作目录/images/用户论文_images", strip_front=True,
+           rel_base="工作目录")
 ```
 
 ## 依赖与被依赖
 
 - **依赖**：Python 标准库（`zipfile` / `xml.etree` / `re` / `os` / `shutil`）。
   **不用 python-docx、不用 pandoc**。
-- **被谁用**：`main.py` 的 `convert` 子命令；`docxflow` 一键流水线（Word 路线）
-  直接调用 `convert_to()`，不重复实现拆解逻辑。
+- **被谁用**：`docxflow` 一键流水线（Word 路线）与 `docxgui` 审阅流程，均调用
+  `prepare_blocks()`（不重复实现拆解逻辑）；`convert_to()` 供独立拆解/开发调试。
 
 ## 注意点
 

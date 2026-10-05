@@ -6,11 +6,11 @@
 ## 用法
 
 ```bash
-python3 main.py loop 论文.docx        # 单文件
-python3 main.py loop ./papers/        # 文件夹批量
-python3 main.py loop <16位哈希>       # 复用已有工作目录（与 run 共用）
-python3 main.py loop 论文.docx --no-reuse   # 强制重跑流水线（改了 convert/build 后）
-python3 main.py loop 论文.docx --template 模板.docx   # 指定模板
+python3 -m docxloop.cli 论文.docx        # 单文件
+python3 -m docxloop.cli ./papers/        # 文件夹批量
+python3 -m docxloop.cli <16位哈希>       # 复用已有工作目录（与 run 共用）
+python3 -m docxloop.cli 论文.docx --no-reuse   # 强制重跑流水线（改了 convert/build 后）
+python3 -m docxloop.cli 论文.docx --template 模板.docx   # 指定模板
 ```
 
 模板默认是**每个输入文件自己**：闭环验证的是「拆解→重建」的无损性，

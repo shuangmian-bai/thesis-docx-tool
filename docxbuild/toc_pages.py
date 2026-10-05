@@ -5,12 +5,9 @@
 之所以要绕这一圈，是因为页码只有排版引擎算得出来：先用占位目录生成一遍 docx，
 渲染成 PDF，再从 PDF 里量出每个标题落在第几页，回填后重新生成，目录就固定了。
 
-用法：
+用法（内部模块，由 run 编排调用；独立调试用 python3 -m docxbuild.toc_pages）：
 
-    python3 main.py build                     # 第一遍：目录页码留空
-    soffice --headless --convert-to pdf 论文_v1_*.docx
-    python3 main.py toc 论文_v1_*.pdf         # 量页码，写 toc_pages.json
-    python3 main.py build                     # 第二遍：目录带上页码
+    python3 -m docxbuild.toc_pages 论文_v1_*.pdf   # 量页码，写 toc_pages.json
 """
 import json
 import os
@@ -29,8 +26,8 @@ LEADER_RUN = re.compile(r"\.{4,}")
 def outline(chap_dir=CHAP_DIR):
     """按文档顺序取出各章的 # 与 ## 标题。
 
-    chap_dir 默认为全局 config/章节/（MD 路线）；Word 路线/闭环的
-    哈希工作目录模式由调用方传入工作目录下的 章节/，避免读到别篇论文。
+    chap_dir 默认为全局 config/章节/（兼容独立调试）；run 统一传入
+    哈希工作目录下的 章节/，避免读到别篇论文。
     """
     items = []
     for fn in sorted(f for f in os.listdir(chap_dir) if f.endswith(".md")):

@@ -105,13 +105,11 @@ class RunProcess(QObject):
         self._proc: Optional[QProcess] = None
         self._root = tool_root
 
-    def start(self, template: Optional[str], work_dir: Optional[str] = None):
+    def start(self, template: Optional[str], hash16: str):
         program = sys.executable
-        args = [os.path.join(self._root, "main.py"), "run"]
+        args = [os.path.join(self._root, "main.py"), "run", hash16]
         if template:
             args += ["--template", template]
-        if work_dir:
-            args += ["--work-dir", work_dir]
         self._proc = QProcess(self)
         self._proc.setWorkingDirectory(self._root)
         self._proc.setProcessChannelMode(

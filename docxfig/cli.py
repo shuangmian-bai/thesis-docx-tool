@@ -4,10 +4,10 @@
 - 内容（画什么、在哪画）写在 `config/figures/*.md` 的 markdown 表格里；
 - 样式（配色、字体、圆角、箭头）由本模块的 render.py 决定，改样式只动代码。
 
-用法：
+用法（内部模块，由 run 编排调用；独立调试用 python3 -m docxfig.cli）：
 
-    python3 main.py fig              # 生成全部图
-    python3 main.py fig fig3_1       # 只生成指定图
+    python3 -m docxfig.cli           # 生成全部图
+    python3 -m docxfig.cli fig3_1    # 只生成指定图
 """
 import os
 

@@ -35,11 +35,10 @@ python3 main.py gui
      AI 改动标记 `[AI 已改]` 且可逐块「还原」；
    - 确认前一切修改只在内存，不落盘。
 3. **构建页 `build_page.py`**：确认后调用 `docxflow.write_chapters_from_blocks()`
-   把块序列按 H1 拆成多章写入 `config/章节/`（清理旧分章由应用层统一负责，
-   与命令行 `run` 行为等价），图片在解析阶段已抽签到
-   `config/images/<docx名>_images/`，随后 QProcess 执行
-   `python3 main.py run [--template ...]`，日志实时滚动、可终止，结束后可打开
-   output 目录。
+   把块序列按 H1 拆成多章写入哈希工作目录的 `章节/`（清理旧分章由应用层统一负责，
+   与命令行 `run` 行为等价），图片在解析阶段已抽取到工作目录的 `images/`，
+   随后 QProcess 执行 `python3 main.py run <哈希> [--template ...]`，日志实时滚动、
+   可终止，结束后可打开 output 目录。
 
 ## 模块
 
@@ -49,9 +48,9 @@ python3 main.py gui
 | `main_window.py` | 三页 QStackedWidget 编排、菜单、状态栏、页面间数据传递 |
 | `wizard_page.py` | docx/模式/模板选择，`open_template` 信号打开模板对话框 |
 | `review_page.py` | 块树、类型筛选、各类块编辑器、类型互转/插入/删除/撤销、AI 操作与还原 |
-| `build_page.py` | 构建页：确认后写块序列入 `config/章节/`，再经 QProcess 执行 run，日志实时滚动 |
+| `build_page.py` | 构建页：确认后写块序列入工作目录 `章节/`，再经 QProcess 执行 run，日志实时滚动 |
 | `block_ops.py` | 块结构操作纯函数（can_convert/convert/new_block/new_image_block，无 Qt 依赖） |
-| `template_page.py` | 模板预览与修复对话框：`docxbuild.tplinspect` 报告、封面字段（存工作目录 cover.json）与签名图修复、`template_changed` 信号 |
+| `template_page.py` | 模板预览对话框：`docxbuild.tplinspect` 只读检视报告、`template_changed` 信号 |
 | `blocks_model.py` | 块类型中文标签、摘要、可编辑性判定（无 Qt 依赖） |
 | `settings_dialog.py` | AI 配置弹窗（provider 预设、key 掩码、连接测试） |
 | `workers.py` | ParseWorker / StructureWorker / RewriteWorker（QThread）与 RunProcess（QProcess） |

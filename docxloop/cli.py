@@ -1,17 +1,17 @@
-"""闭环测试命令行入口。
+"""闭环测试命令行入口（开发调试工具，非面向用户入口）。
 
 用法：
     # 用文件路径跑闭环（自动计算哈希并创建隔离工作目录）
-    python3 main.py loop 论文.docx
+    python3 -m docxloop.cli 论文.docx
 
     # 用哈希跑闭环（直接定位已有工作目录，不重新 convert→build）
-    python3 main.py loop abc123def4567890
+    python3 -m docxloop.cli abc123def4567890
 
     # 输入文件夹（批量，每个文件独立哈希隔离）
-    python3 main.py loop ./papers/
+    python3 -m docxloop.cli ./papers/
 
     # 强制重新构建（不复用已有产物）
-    python3 main.py loop 论文.docx --no-reuse
+    python3 -m docxloop.cli 论文.docx --no-reuse
 """
 import os
 import sys

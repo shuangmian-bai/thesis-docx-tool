@@ -8,8 +8,8 @@
 ## 用法
 
 ```bash
-python3 main.py fig              # 生成 config/figures/ 下全部图
-python3 main.py fig fig3_1       # 只生成指定图（省略 .md 后缀）
+python3 -m docxfig.cli           # 生成 config/figures/ 下全部图（内部模块，开发调试）
+python3 -m docxfig.cli fig3_1    # 只生成指定图（省略 .md 后缀）
 ```
 
 输出 PNG 到 `config/images/`，文件名与 md 同名（如 `fig3_1_architecture.md` → `fig3_1_architecture.png`），

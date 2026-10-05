@@ -3,7 +3,8 @@
 主窗口只做编排与页面间数据传递：
 - 解析/AI/构建均由 workers 后台执行，本类不写业务逻辑；
 - 审阅确认后调用 docxflow 应用层的 write_chapters_from_blocks() 把块写入
-  config/章节/（清理旧分章），再由外部进程 `python3 main.py run` 完成后续阶段。
+  哈希工作目录的 章节/（清理旧分章），再由外部进程 `python3 main.py run <哈希>`
+  完成后续阶段。
 """
 import os
 
@@ -21,8 +22,6 @@ from docxgui.workers import ParseWorker, RunProcess
 from docxflow.cli import DEFAULT_TEMPLATE
 
 CONFIG_DIR = os.path.join(HERE, "config")
-CHAPTERS_DIR = os.path.join(CONFIG_DIR, "章节")
-IMAGES_ROOT = os.path.join(CONFIG_DIR, "images")
 OUTPUT_DIR = os.path.join(HERE, "output")
 
 
@@ -129,15 +128,15 @@ class MainWindow(QMainWindow):
         # GUI 不自行实现，确保与命令行 run 行为等价（出 bug 只修一处）。
         # 写入哈希工作目录的 章节/ 子目录，避免污染 config/章节/。
         from docxflow.cli import write_chapters_from_blocks
-        work_dir = self._cur.get("work_dir")
-        chap_dir = os.path.join(work_dir, "章节") if work_dir else None
+        work_dir = self._cur["work_dir"]
+        chap_dir = os.path.join(work_dir, "章节")
         try:
             written = write_chapters_from_blocks(blocks, chap_dir=chap_dir)
         except OSError as e:
             QMessageBox.critical(self, "导出失败", f"无法写入章节文件：{e}")
             return
 
-        rel_dir = os.path.relpath(chap_dir or CHAPTERS_DIR, HERE)
+        rel_dir = os.path.relpath(chap_dir, HERE)
         summary = f"{len(written)} 个章节 → {rel_dir}"
         if not do_build:
             QMessageBox.information(
@@ -150,4 +149,4 @@ class MainWindow(QMainWindow):
         self.build_page.reset()
         self.stack.setCurrentIndex(2)
         template = self._cur.get("template") or None
-        self._runner.start(template, work_dir)
+        self._runner.start(template, os.path.basename(work_dir))

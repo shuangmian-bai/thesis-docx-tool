@@ -59,7 +59,7 @@ def run_closed_loop(src_path: str, template_path: Optional[str] = None,
         # copy_to_output：闭环产物留在工作目录即可，不占用全局 output/
         from docxflow.cli import run_pipeline
         out_docx = run_pipeline(
-            docx=src_path, work_dir=wdir, template=template_path,
+            src_path, template_path,
             no_audit=True, copy_to_output=False)
 
     return compare(src_path, out_docx)

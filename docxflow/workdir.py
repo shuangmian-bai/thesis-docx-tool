@@ -10,7 +10,6 @@ run / loop / gui 三条入口共用同一套哈希隔离机制，本模块是唯
     ├── index.json              # {哈希: 原文件绝对路径}
     └── <hash16>/
         ├── src.md              # convert 产物（整篇 Markdown）
-        ├── cover.json          # 从 docx 提取的封面字段
         ├── images/             # 抽取的图片
         ├── 章节/               # build 输入（按 H1 拆分的数字开头 md）
         ├── output/             # build 输出

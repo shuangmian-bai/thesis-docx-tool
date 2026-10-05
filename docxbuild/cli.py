@@ -10,10 +10,10 @@ styles.xml / numbering.xml / theme / fontTable 与字体设置。
 前缀（w14、w15、wp14…）在重新序列化时会被丢掉，文档会损坏。因此这里采用
 「字符串拼接 + 逐片段序列化」的方式，并把根标签上的 xmlns 声明原样搬运过去。
 
-用法：
+用法（内部模块，由 run 编排调用；独立调试用 python3 -m docxbuild.cli）：
 
-    python3 main.py build
-    python3 main.py build --template /path/to/其它模板.docx   # 换模板
+    python3 -m docxbuild.cli
+    python3 -m docxbuild.cli --template /path/to/其它模板.docx   # 换模板
 
 产物：`output/论文_v1_YYYYMMDD.docx`（日期取当天），并把各章合并为 `output/论文正文.md`。
 默认模板为 `config/template.docx`（使用者自备），可用 `--template` 覆盖。
