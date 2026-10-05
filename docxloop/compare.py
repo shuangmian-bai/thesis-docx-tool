@@ -58,11 +58,17 @@ class CompareResult:
 def check_expected(area: str, what: str):
     """登记已知且接受的偏离。返回 (是否预期, 原因)。
 
-    目录页码与制表位由 Word 排版引擎在打开/重建域时计算，静态回填值与
-    原文不可能逐字相同，属结构性预期差异。
+    预期差异分两类，都**标记而非跳过**：
+    - 结构性（排版引擎计算）：目录页码、制表位，Word 打开/F9 后自动同步；
+    - 人工修复（模板无法通用化）：承诺书签字图按作者换、模板为示例签名，
+      需人工替换后复验。
     """
     if area == "toc" and what in ("页码", "制表位"):
         return True, "页码由排版引擎计算；Word 中 Ctrl+A 后 F9 重建即同步"
+    if area == "cover" and what == "签字图":
+        return True, "承诺书签字图按作者换，模板为示例签名；需人工替换后复验"
+    if area == "cover" and what == "前置段落":
+        return True, "封面字段/承诺书正文按作者与学校定，模板为示例；需人工核对"
     return False, ""
 
 
@@ -241,10 +247,33 @@ def compare(src_path: str, out_path: str) -> CompareResult:
                      if p["text"] and p["pstyle"] not in ("TOC1", "TOC2")]
         for i, (a, b) in enumerate(zip(src_cover, out_cover)):
             if a != b:
-                result.diffs.append(Diff("cover", f"前置段落#{i}", a[:60], b[:60]))
+                exp, reason = check_expected("cover", "前置段落")
+                result.diffs.append(Diff(
+                    "cover", f"前置段落#{i}", a[:60], b[:60],
+                    expected=exp, expected_reason=reason))
         if len(src_cover) != len(out_cover):
+            exp, reason = check_expected("cover", "前置段落")
             result.diffs.append(Diff(
-                "cover", "前置段落总数", str(len(src_cover)), str(len(out_cover))))
+                "cover", "前置段落总数", str(len(src_cover)), str(len(out_cover)),
+                expected=exp, expected_reason=reason))
+
+        # 前置区图片（承诺书签字图）：标记而非跳过——尺寸/数量差异登记为
+        # 预期差异（按作者换），提示人工替换，不因签字图不同而漏检
+        src_front_imgs = _extract_images(src_front)
+        out_front_imgs = _extract_images(out_front)
+        for i, (a, b) in enumerate(zip(src_front_imgs, out_front_imgs)):
+            if (a["cx"], a["cy"]) != (b["cx"], b["cy"]):
+                exp, reason = check_expected("cover", "签字图")
+                result.diffs.append(Diff(
+                    "cover", f"签字图#{i}尺寸",
+                    f"{a['cx']}x{a['cy']}", f"{b['cx']}x{b['cy']}",
+                    expected=exp, expected_reason=reason))
+        if len(src_front_imgs) != len(out_front_imgs):
+            exp, reason = check_expected("cover", "签字图")
+            result.diffs.append(Diff(
+                "cover", "签字图总数",
+                str(len(src_front_imgs)), str(len(out_front_imgs)),
+                expected=exp, expected_reason=reason))
 
         # ===== 3. 目录（标记检查：文本与数量必须一致，页码/制表位为预期差异） =====
         src_toc = _extract_toc_entries(src_front)

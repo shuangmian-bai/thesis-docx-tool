@@ -38,9 +38,13 @@ def render(results: List[CompareResult], title: str = "闭环测试报告") -> s
         status_color = "#52c41a" if r.passed else "#ff4d4f"
         rows = []
         for d in r.diffs:
-            bg = "#f6ffed" if d.expected else "#fff1f0"
-            tag = '<span style="color:#52c41a">预期</span>' if d.expected \
-                  else '<span style="color:#ff4d4f">非预期</span>'
+            manual = d.expected and "人工" in d.expected_reason
+            if not d.expected:
+                bg, tag = "#fff1f0", '<span style="color:#ff4d4f">非预期</span>'
+            elif manual:
+                bg, tag = "#fff7e6", '<span style="color:#fa8c16">待人工</span>'
+            else:
+                bg, tag = "#f6ffed", '<span style="color:#52c41a">预期</span>'
             reason = f'<div style="color:#888;font-size:12px">{html.escape(d.expected_reason)}</div>' if d.expected else ""
             rows.append(f"""
             <tr style="background:{bg}">
