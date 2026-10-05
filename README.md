@@ -474,7 +474,7 @@ python3 main.py loop 论文.docx --no-reuse
 
 | 依赖 | 用途 | 是否必需 |
 |---|---|---|
-| Python 3.8+ | 命令行运行环境 | 必需（gui 建议 3.9+） |
+| Python 3.9+ | 命令行运行环境 | 必需 |
 | Pillow | build 时计算插图显示尺寸；fig 时渲染架构图 PNG | fig 必需，build 无图可缺省 |
 | PyQt6 | gui 图形界面（docxai AI 核心不需要） | 仅 gui 模式必需 |
 | LibreOffice (`soffice`) | docx 转 PDF（量目录页码用） | 量页码时必需 |
