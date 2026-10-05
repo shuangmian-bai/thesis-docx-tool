@@ -3,16 +3,18 @@
 
 面向用户只有两个子命令：
 
-  run   一键流水线：从用户 docx（或已拆解的哈希工作目录）端到端生成成品 Word
+  run   一键流水线：从「工作目录」端到端生成成品 Word（word/哈希/目录 三种来源）
   gui   PyQt6 图形界面：选 docx 与模板 → 审阅/修复（可 AI 修正）→ 一键出稿
 
-run 的两种用法（同一入口，靠第一个参数区分）：
+run 的三种用法（同一入口，靠第一个参数区分，本质都是「目录模式」）：
 
-    python3 main.py run 论文.docx [--template 模板.docx]   # 拆解 word → md 存哈希工作目录 → 构建
-    python3 main.py run <16位哈希> [--template 模板.docx]  # 复用工作目录 md 重新构建
+    python3 main.py run 论文.docx [--template 模板.docx]   # word → 哈希目录 → 拆解 → 构建
+    python3 main.py run <16位哈希> [--template 模板.docx]  # 定位目录 → 构建（复用 md）
+    python3 main.py run 目录 [--template 模板.docx]        # 目录（含 章节/*.md）→ 直接构建
 
-拆解产物落在哈希工作目录（.cache/run_work/<hash>/），修改章节后传哈希重跑即可。
-封面、承诺书、签名图等由模板骨架提供，工具不提取、不填充、不缺件报错。
+「目录」是核心契约：一个含「章节/*.md」（+ 可选 figures/、images/）的独立目录。
+word 拆解、AI 生成、手写都是「填充这个目录」的方式；哈希只是 word 的自动命名
+（内容 SHA256 前 16 位）。封面、承诺书、签名图等由模板骨架提供，不提取不填充。
 
 gui 需先 pip install -r requirements.txt 安装 PyQt6（run 不依赖 PyQt6）。
 """

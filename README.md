@@ -91,26 +91,25 @@ cp /path/to/学校论文模板.docx config/template.docx
 
 ### 2. 一条命令出成品
 
-传入已写好的 Word，自动拆解为章节 Markdown（存哈希工作目录）后套模板出成品：
+`run` 的核心是「**目录模式**」：一个含 `章节/*.md`（+ 可选 `figures/`、`images/`）
+的独立目录。三种输入本质都是「填充这个目录」，word 只是其中一种来源：
 
 ```bash
-python3 main.py run 用户论文.docx                      # 默认模板 config/template.docx
-python3 main.py run 用户论文.docx --template 模板.docx  # 指定模板
+python3 main.py run 用户论文.docx                      # word → 自动哈希目录 → 拆解 → 构建
+python3 main.py run <16位哈希> [--template 模板.docx]  # 定位目录 → 构建（复用 md）
+python3 main.py run 目录 [--template 模板.docx]        # 目录（含 章节/*.md）→ 直接构建
 ```
 
-`run` 会依次自动完成：拆解 → 架构图渲染（有 DSL 才渲染）→ 构建 → 转 PDF 量目录
-页码 → 二次构建（页码回填）→ 格式审计，产物为 `output/论文_v1_YYYYMMDD.docx`。
-本机没有 LibreOffice（`soffice`）或 `pdftotext` 时，页码回填自动跳过、照常出稿。
+**word 路线**：按内容 SHA256 前 16 位自动创建隔离工作目录（`.cache/run_work/<hash>/`），
+拆解产物（`章节/*.md`、`src.md`、`images/`）都在里面，多篇论文互不污染。
 
-**哈希隔离**：`run` 按文件内容 SHA256 前 16 位创建隔离工作目录
-（`.cache/run_work/<hash>/`），拆解产物（`章节/*.md`、`src.md`、`images/`）都在里面，
-多篇论文互不污染；成品最终复制到 `output/` 方便取用。
+**目录路线**：直接指定一个已含内容的目录（AI 生成、手写均可），只要目录下
+`章节/*.md` 满足「文件名以数字开头」的约定即可直接构建。仓库的 `config/` 目录
+就是这样一个例子——`章节/` + `figures/`（架构图 DSL）+ `images/`（渲染结果）。
 
-拆解得到的 Markdown 可编辑，改完后用哈希重新构建（不重新拆解）：
-
-```bash
-python3 main.py run <16位哈希> [--template 模板.docx]
-```
+`run` 依次自动完成：拆解（仅 word 路线）→ 架构图渲染（目录 `figures/` 有 DSL 才渲染）
+→ 构建 → 转 PDF 量页码 → 二次构建（页码回填）→ 格式审计，产物 `output/论文_v1_*.docx`。
+缺 `soffice`/`pdftotext` 时页码回填自动跳过。
 
 ### 3. 图形界面（适合样式不规范的 Word）
 
@@ -129,13 +128,14 @@ API Key（支持 DeepSeek、豆包、通义、OpenAI 及任意 OpenAI 兼容接�
 ### run（一键流水线，推荐）
 
 ```
-python3 main.py run <论文.docx | 16位哈希> [--template 模板.docx]
+python3 main.py run <论文.docx | 16位哈希 | 目录> [--template 模板.docx]
 ```
 
 - 传 docx：先按内容哈希创建隔离工作目录，拆解该 docx 为工作目录的 `章节/*.md`
   （默认剥离原封面/承诺书/目录，由模板骨架提供），再出成品（Word 路线）。
 - 传哈希：复用已有工作目录（跳过拆解），直接从工作目录的 `章节/` 构建，
   用于「拆解后编辑 Markdown，再重新构建」。
+- 传目录：直接用该目录（含 `章节/*.md`）构建，不拆解——AI 生成/手写内容走这条。
 - 开工前一次性检查模板与章节源是否齐备，缺件直接报齐，不跑到半途才失败。
 - `--template` 可指定任意外部模板（默认 `config/template.docx`），构建与成品审计
   都使用该模板；外部模板下审计自动停用只对默认模板登记的预期偏离表，按真实差异报告。

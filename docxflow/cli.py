@@ -1,24 +1,25 @@
 """一键流水线：`run` 子命令的编排实现（应用层）。
 
-面向用户只有一条命令、两种输入（同一入口，参数区分）：
+面向用户一条命令、三种输入（同一入口，本质都是「目录模式」）：
 
-    python3 main.py run 论文.docx [--template 模板.docx]   # 拆解 word → md 存哈希工作目录 → 构建
-    python3 main.py run <16位哈希> [--template 模板.docx]  # 复用工作目录 md 重新构建
+    python3 main.py run 论文.docx [--template 模板.docx]   # word → 哈希目录 → 拆解 → 构建
+    python3 main.py run <16位哈希> [--template 模板.docx]  # 定位目录 → 构建（复用 md）
+    python3 main.py run 目录 [--template 模板.docx]        # 目录（含 章节/*.md）→ 直接构建
+
+「目录」是核心契约：一个含「章节/*.md」（+ 可选 figures/、images/）的独立目录。
+word 拆解、AI 生成、手写都是「填充这个目录」的方式；哈希只是 word 的自动命名。
 
 本模块的 run_pipeline() 是**全流程唯一编排实现**，命令行 / GUI / 闭环测试
 三个入口只负责解析参数后调用它，不得各自实现 convert/build/章节写入等
 流程逻辑（子项目 CLAUDE.md 项目特定规则第 8 条）。
 
-所有路径统一走「哈希工作目录」，不存在 MD 路线的全局目录分支——这是
-「要么一起出 bug、要么全部正常」的保证：一条目录结构、一套产物落点。
-
 内部自动串联以下阶段，用户不需要手工分步运行，也无任何开关参数：
 
-    1. 判定输入（word 或哈希）→ 统一落到哈希工作目录
-    2. 前置检查：模板、章节源（哈希路线），缺件一次性报齐
+    1. 判定输入（word / 哈希 / 目录）→ 统一落到工作目录
+    2. 前置检查：模板、章节源（哈希/目录路线），缺件一次性报齐
     3. 清理工作目录旧产物（output/、toc.json）
     4. 拆解（仅 word 输入）：docx → 工作目录 src.md + 章节/*.md + images/
-    5. 架构图：config/figures/ 有 DSL 定义时自动渲染 PNG（无则跳过）
+    5. 架构图：工作目录 figures/ 有 DSL 定义时自动渲染到 images/（无则跳过）
     6. 构建：build 第一遍，生成占位目录的成品 docx
     7. 页码回填：本机有 soffice 与 pdftotext 时自动 docx→PDF→量页码→第二遍构建；
        缺任一则跳过（Word 中 Ctrl+A 后 F9 也可更新目录），不阻断出稿
@@ -37,9 +38,8 @@ from docxflow.workdir import is_hash16, prepare_work_dir, resolve_hash
 from docxbuild.cli import OUTPUT_DIR
 from docxfig.parser import list_figures
 
-# 编排层固定路径（与各原子模块中的定义同值；集中在此供前置检查使用）
+# 编排层固定路径（集中在此供前置检查使用）
 CONFIG_DIR = os.path.join(HERE, "config")
-FIG_DIR = os.path.join(CONFIG_DIR, "figures")
 DEFAULT_TEMPLATE = os.path.join(CONFIG_DIR, "template.docx")
 
 # soffice 使用独立用户配置目录，避免与用户正在运行的 LibreOffice 抢 profile
@@ -128,17 +128,18 @@ def _precheck(template: str, work_dir: str, have_docx: bool) -> None:
         raise SystemExit(f"开工前检查未通过：\n  {msg}")
 
 
-def _fig_stage() -> bool:
-    """渲染架构图（config/figures/ 有 DSL 才渲染）。返回是否实际生成。"""
-    figures = list_figures(os.path.normpath(FIG_DIR))
+def _fig_stage(work_dir: str) -> bool:
+    """渲染架构图（工作目录的 figures/ 有 DSL 才渲染）。返回是否实际生成。"""
+    fig_dir = os.path.join(work_dir, "figures")
+    figures = list_figures(fig_dir)
     if not figures:
-        print("config/figures/ 下无图定义，跳过架构图阶段")
+        print(f"{os.path.relpath(fig_dir, HERE)} 下无图定义，跳过架构图阶段")
         return False
     if importlib.util.find_spec("PIL") is None:
         raise SystemExit("存在架构图定义但未安装 Pillow，无法渲染："
                          "请先执行 pip install -r requirements.txt")
     from docxfig.cli import generate
-    generate(None)
+    generate(None, fig_dir=fig_dir, out_dir=os.path.join(work_dir, "images"))
     return True
 
 
@@ -229,13 +230,14 @@ def _convert_stage(docx: str, work_dir: str) -> None:
 def run_pipeline(source: str, template: Optional[str] = None, *,
                  no_audit: bool = False,
                  copy_to_output: bool = True) -> str:
-    """全流程唯一编排实现：从 word（或哈希工作目录）到成品 Word。
+    """全流程唯一编排实现：从「工作目录」到成品 Word。
 
-    统一入口，无模式分叉——source 为 word 文件路径或 16 位哈希，内部统一落到
-    「哈希工作目录」这一条目录结构：
+    统一入口，无模式分叉。source 是 word 文件、16 位哈希或目录，三者本质都是
+    「目录模式」——最终都落到一个含「章节/*.md」的独立工作目录：
 
     - word 文件：按内容哈希创建/定位工作目录 → 拆解 → 构建
     - 16 位哈希：定位已有工作目录 → 构建（跳过拆解，复用已拆解/编辑的 md）
+    - 目录：直接用该目录（含 章节/*.md）构建——AI 生成/手写内容也走这条
 
     template=None 时用默认模板 config/template.docx。
 
@@ -247,19 +249,21 @@ def run_pipeline(source: str, template: Optional[str] = None, *,
     template_explicit = template is not None
     template = os.path.abspath(template) if template else DEFAULT_TEMPLATE
 
-    # 判定输入类型，统一落到哈希工作目录（work_dir 永远非 None）
+    # 判定输入类型，统一落到「工作目录」（word / 哈希 / 目录 三种来源，本质都是目录模式）
     docx = None
     if is_hash16(source):
         work_dir = resolve_hash(source.lower())
         if not work_dir:
             raise SystemExit(f"哈希 {source.lower()} 对应的工作目录不存在，请先传入文件路径")
-    else:
-        if not os.path.isfile(source):
-            raise SystemExit(f"输入不存在：{source}"
-                             "（不是文件路径；若是哈希，对应工作目录不存在，请先传入文件路径）")
+    elif os.path.isdir(source):
+        work_dir = os.path.abspath(source)
+    elif os.path.isfile(source):
         docx = source
         work_dir = prepare_work_dir(docx)
-    print(f"工作目录（哈希隔离）：{os.path.relpath(work_dir, HERE)}")
+    else:
+        raise SystemExit(f"输入不存在：{source}"
+                         "（应为 word 文件、16 位哈希，或含 章节/ 的目录）")
+    print(f"工作目录：{os.path.relpath(work_dir, HERE)}")
 
     _step("阶段 · 开工前检查")
     _precheck(template, work_dir, docx is not None)
@@ -275,7 +279,7 @@ def run_pipeline(source: str, template: Optional[str] = None, *,
               f"`run {os.path.basename(work_dir)}` 重新构建。")
 
     _step("阶段 · 架构图渲染")
-    _fig_stage()
+    _fig_stage(work_dir)
 
     _step("阶段 · 构建 Word（第一遍）")
     product = _build(template, work_dir)
@@ -305,10 +309,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     （复用工作目录），模板用 `--template` 指定。无任何其它开关。
     """
     ap = argparse.ArgumentParser(
-        description="一键流水线：从用户 docx（或已拆解的哈希工作目录）端到端生成"
-                    "成品 Word，内部自动完成拆解、架构图、构建、页码回填与审计。")
+        description="一键流水线：从工作目录（word/哈希/目录）端到端生成成品 Word，"
+                    "内部自动完成拆解、架构图、构建、页码回填与审计。")
     ap.add_argument("source",
-                    help="用户论文 docx 路径，或 16 位哈希（复用已有工作目录重建）")
+                    help="用户论文 docx 路径、16 位哈希，或含 章节/ 的目录（直接构建）")
     ap.add_argument("--template", default=None,
                     help=f"模板 docx 路径（默认 {DEFAULT_TEMPLATE}）")
     args = ap.parse_args(argv)

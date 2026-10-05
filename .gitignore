@@ -17,6 +17,10 @@ config/images/
 # ===== 生成产物（output/ 模块）：一律排除 =====
 output/
 
+# 目录模式下（run 目录 直接构建）在内容目录内产生的产物
+config/output/
+config/toc.json
+
 # 用户拆解 Word 时生成的图片目录
 *_images/
 

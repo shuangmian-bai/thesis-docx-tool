@@ -95,22 +95,29 @@ def _validate(fig_name, canvas_h, elements):
     return warns
 
 
-def generate(name=None):
-    """生成图。name=None 生成全部，否则只生成指定图。"""
-    figures = list_figures(FIG_DIR)
+def generate(name=None, fig_dir=None, out_dir=None):
+    """生成图。name=None 生成全部，否则只生成指定图。
+
+    fig_dir / out_dir 默认 config/figures / config/images；「目录模式」下由
+    run 传入目录的 figures/ 与 images/，使架构图随目录隔离（word 拆解、AI 生成、
+    手写目录共用同一套）。
+    """
+    fig_dir = fig_dir or FIG_DIR
+    out_dir = out_dir or OUT_DIR
+    figures = list_figures(fig_dir)
     if name:
         figures = [(n, p) for n, p in figures if n == name]
         if not figures:
-            raise SystemExit(f"找不到图定义：{name}（在 {FIG_DIR} 下）")
+            raise SystemExit(f"找不到图定义：{name}（在 {fig_dir} 下）")
 
-    print(f"生成架构图 → {os.path.relpath(OUT_DIR, HERE)}")
+    print(f"生成架构图 → {os.path.relpath(out_dir, HERE)}")
     for fig_name, md_path in figures:
         canvas_h, elements = parse(md_path)
         _validate(fig_name, canvas_h, elements)
         im, d = R.new_canvas(canvas_h)
         for el in elements:
             _draw_element(d, el)
-        R.save(im, OUT_DIR, f"{fig_name}.png")
+        R.save(im, out_dir, f"{fig_name}.png")
     print("完成。")
 
 
