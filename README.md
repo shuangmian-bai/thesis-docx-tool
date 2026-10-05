@@ -77,6 +77,17 @@ pip install -r requirements.txt
 - 架构图渲染（`docxfig`）与 `build` 插图尺寸计算：可选 Pillow（缺失时回退默认尺寸）；
 - `gui`：需要 PyQt6（AI 调用本身只用标准库 urllib，不需要任何 AI SDK）。
 
+### 打包 Windows 桌面应用（免 Python）
+
+```bash
+.venv/Scripts/python.exe build.py     # -> dist/thesis-docx-tool/
+```
+
+产物为多文件目录：`thesis-docx-tool.exe` 双击即用——**默认进入 gui**，带 cmd 窗口
+（run/gui 的日志可见）；`config/` 预建好用户数据目录，把学校模板放
+`config/template.docx` 即可。整个 `dist/thesis-docx-tool/` 目录拷到目标机器，
+无需安装 Python。
+
 ## 快速开始
 
 ### 1. 准备模板（只需一次）

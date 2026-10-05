@@ -17,6 +17,11 @@ config/images/
 # ===== 生成产物（output/ 模块）：一律排除 =====
 output/
 
+# ===== 构建产物（build.py 打包）：一律排除 =====
+dist/
+build/
+*.spec
+
 # 目录模式下（run 目录 直接构建）在内容目录内产生的产物
 config/output/
 config/toc.json

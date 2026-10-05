@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """thesis-docx-tool 统一入口。
 
+桌面应用：直接运行（双击 exe 或 python main.py，不带参数）默认进入 gui 图形界面。
+
 面向用户只有两个子命令：
 
   run   一键流水线：从「工作目录」端到端生成成品 Word（word/哈希/目录 三种来源）
@@ -22,7 +24,11 @@ import sys
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
+    if len(sys.argv) < 2:
+        # 无参数默认 gui（桌面应用双击即用，带 cmd 窗口时日志可见）
+        from docxgui.app import main as gui_main
+        return gui_main([])
+    if sys.argv[1] in ("-h", "--help"):
         print(__doc__)
         return 0
 
