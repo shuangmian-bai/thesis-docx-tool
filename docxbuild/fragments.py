@@ -8,6 +8,8 @@
 `ac` 表格、`ad` 表文），不自行发明；直接格式只保留模板里出现过的写法，例外见
 本目录 `README.md` 的「格式约定」。
 """
+import re
+
 from docxbuild.layout import CONTENT_W, MAX_IMG_H, MAX_IMG_W
 from docxbuild.mdparse import disp_w, parse_inline
 
@@ -21,6 +23,23 @@ def next_id():
 
 def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _split_fmt(text):
+    """解析文本开头的 `{k=v}` 格式前缀，返回 (格式字典, 剩余文本)。
+
+    拆解端 _para_text 把段落级格式（jc/ind firstLine）写成 `{jc=center,ind=482}`
+    前缀；本函数还原，供各段落渲染函数写成 `<w:jc/>` / `<w:ind/>`。
+    """
+    m = re.match(r"^\{([^}]*)\}", text)
+    if not m:
+        return {}, text
+    fmt = {}
+    for kv in m.group(1).split(","):
+        if "=" in kv:
+            k, v = kv.split("=", 1)
+            fmt[k] = v
+    return fmt, text[m.end():]
 
 
 def runs_xml(text):
@@ -38,13 +57,16 @@ def runs_xml(text):
 
 
 def para_xml(text, style=None, jc=None, extra_ppr=""):
+    fmt, text = _split_fmt(text)
     ppr = []
     if style:
         ppr.append(f'<w:pStyle w:val="{style}"/>')
     if extra_ppr:
         ppr.append(extra_ppr)
-    if jc:
-        ppr.append(f'<w:jc w:val="{jc}"/>')
+    if fmt.get("ind"):
+        ppr.append(f'<w:ind w:firstLine="{fmt["ind"]}"/>')
+    if jc or fmt.get("jc"):
+        ppr.append(f'<w:jc w:val="{jc or fmt["jc"]}"/>')
     ppr_xml = f"<w:pPr>{''.join(ppr)}</w:pPr>" if ppr else ""
     return f"<w:p>{ppr_xml}{runs_xml(text)}</w:p>"
 
@@ -91,16 +113,21 @@ def list_item_xml(text, num_id):
     缩进、编号文字（"1."）与计数全部由编号定义给出，片段里不写编号文本；
     同一段连续条目共用一个 numId，新段落在 cli 里另发新 numId 并从 1 重编号。
     """
+    fmt, text = _split_fmt(text)
+    ind_fl = f'<w:ind w:firstLine="{fmt["ind"]}"/>' if fmt.get("ind") else ""
+    jc_xml = f'<w:jc w:val="{fmt["jc"]}"/>' if fmt.get("jc") else ""
     ppr = (f'<w:pStyle w:val="a0"/>'
+           f'{ind_fl}{jc_xml}'
            f'<w:numPr><w:ilvl w:val="0"/>'
            f'<w:numId w:val="{num_id}"/></w:numPr>')
     return f"<w:p><w:pPr>{ppr}</w:pPr>{runs_xml(text)}</w:p>"
 
 
-def code_xml(lines):
+def code_xml(lines, sz=None):
+    rpr = f'<w:rPr><w:sz w:val="{sz}"/></w:rPr>' if sz else ""
     return "".join(
         f'<w:p><w:pPr><w:pStyle w:val="code"/></w:pPr>'
-        f'<w:r><w:t xml:space="preserve">{esc(ln) if ln else " "}</w:t></w:r></w:p>'
+        f'<w:r>{rpr}<w:t xml:space="preserve">{esc(ln) if ln else " "}</w:t></w:r></w:p>'
         for ln in lines
     )
 
@@ -121,26 +148,35 @@ def table_xml(rows):
 
     首行的 `tblHeader` 保留：表格不跨页时它不触发，留作表格长到超过一页时的兜底。
     """
-    ncol = max(len(r) for r in rows)
-    rows = [r + [""] * (ncol - len(r)) for r in rows]
+    # 每行按 span 展开：(单元格, span)；ncol = 最大展开列数；不补齐空单元格
+    def span_of(c):
+        m = re.match(r"^\{span=(\d+)\}", c)
+        return int(m.group(1)) if m else 1
 
-    # 列宽按内容需要分配。先把各列表头需要的宽度留足——表头折行很难看；
-    # 剩余宽度再按各列正文最长单元格的需要分配，总宽不够时按比例压缩（正文可折行）。
+    expanded = [[(c, span_of(c)) for c in r] for r in rows]
+    ncol = max(sum(s for _, s in er) for er in expanded)
+
+    # 列宽按内容需要分配：span 单元格的需求宽度均分给 span 列，每列取最大
+    # 需求，总宽按比例归一化到正文宽度。
     CHAR_W = 105      # 10.5 磅下一个半角字符的宽度（twips）
     CELL_PAD = 240    # 单元格左右边距之和
 
-    def need(cells):
-        return max(disp_w(t) for t in cells or [""]) * CHAR_W + CELL_PAD
+    def need(text):
+        return disp_w(text or "") * CHAR_W + CELL_PAD
 
-    head_need = [need([rows[0][c]]) for c in range(ncol)]
-    body_need = [need([r[c] for r in rows[1:]]) for c in range(ncol)]
-    spare = max(0, CONTENT_W - sum(head_need))
-    bt = sum(body_need) or 1
-    widths = [head_need[c] + int(body_need[c] * spare / bt) for c in range(ncol)]
+    col_reqs = [[] for _ in range(ncol)]
+    for er in expanded:
+        ci = 0
+        for c, span in er:
+            w = need(c) / span
+            for _ in range(span):
+                col_reqs[ci].append(w)
+                ci += 1
+    widths = [max(reqs) if reqs else CELL_PAD for reqs in col_reqs]
 
     total = sum(widths)
     if total != CONTENT_W:
-        # 取整误差（或表头本身就超宽）统一消化到最后一列
+        # 取整误差（或需求本身就超宽）统一消化到最后一列
         widths = [int(w * CONTENT_W / total) for w in widths]
         widths[-1] += CONTENT_W - sum(widths)
 
@@ -159,7 +195,7 @@ def table_xml(rows):
     parts.append("</w:tblGrid>")
 
     last = len(rows) - 1
-    for ri, row in enumerate(rows):
+    for ri, er in enumerate(expanded):
         if ri == 0:
             # cnfStyle 与 tblLook 的 firstRow 共同触发样式 ac 的表头格式。
             # CT_TrPr 是 sequence：cantSplit 排在 cnfStyle 之后、tblHeader 之前。
@@ -175,16 +211,30 @@ def table_xml(rows):
         # 除末行外，行内段落与下一行同页，整表因而不可分页；末行不加，
         # 否则表格会与后面的正文段落粘连。keepNext 在 CT_PPr 里紧跟 pStyle。
         keep = "" if ri == last else "<w:keepNext/>"
-        for ci, cell in enumerate(row):
-            tcpr = f'<w:tcPr><w:tcW w:w="{pcts[ci]}" w:type="pct"/><w:hideMark/></w:tcPr>'
+        ci = 0
+        for cell, span in er:
+            fmt, cell_body = _split_fmt(cell)
+            if span > 1:
+                # 跨列合并：tcW 取 span 列百分比之和，gridSpan 标记跨列
+                total_pct = sum(pcts[ci:ci + span])
+                tcpr = (f'<w:tcPr><w:tcW w:w="{total_pct}" w:type="pct"/>'
+                        f'<w:gridSpan w:val="{span}"/><w:hideMark/></w:tcPr>')
+            else:
+                tcpr = f'<w:tcPr><w:tcW w:w="{pcts[ci]}" w:type="pct"/><w:hideMark/></w:tcPr>'
             # 单元格内的 <br>（来自 markdown 表格换行）拆成多个段落，
             # 避免被 esc 转义成字面量 <br>
-            paras = cell.split("<br>") if cell else [""]
-            body = "".join(
-                f'<w:p><w:pPr><w:pStyle w:val="ad"/>{keep}</w:pPr>'
-                f'{runs_xml(p)}</w:p>'
-                for p in paras)
+            paras = cell_body.split("<br>") if cell_body else [""]
+            body_parts = []
+            for p in paras:
+                fmt2, p = _split_fmt(p)
+                ind_fl = f'<w:ind w:firstLine="{fmt2["ind"]}"/>' if fmt2.get("ind") else ""
+                jc_xml = f'<w:jc w:val="{fmt2["jc"]}"/>' if fmt2.get("jc") else ""
+                body_parts.append(
+                    f'<w:p><w:pPr><w:pStyle w:val="ad"/>{ind_fl}{jc_xml}{keep}</w:pPr>'
+                    f'{runs_xml(p)}</w:p>')
+            body = "".join(body_parts)
             parts.append(f"<w:tc>{tcpr}{body}</w:tc>")
+            ci += span
         parts.append("</w:tr>")
     parts.append("</w:tbl>")
     return "".join(parts)

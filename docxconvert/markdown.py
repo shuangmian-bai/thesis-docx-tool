@@ -11,6 +11,7 @@
 - `table` → 管道表格，首行后加 `| --- |` 分隔行
 - `img` → `![说明](路径)`
 """
+import re
 
 
 def _cell(s):
@@ -43,7 +44,8 @@ def render(blocks):
             out.append(blk[1])
             out.append("")
         elif kind == "code":
-            out.append("```")
+            attr = f"{{sz={blk[2]}}}" if len(blk) > 2 and blk[2] else ""
+            out.append(f"```{attr}")
             out.extend(blk[1])
             out.append("```")
             out.append("")
@@ -51,8 +53,12 @@ def render(blocks):
             rows = blk[1]
             if not rows:
                 continue
-            ncol = max(len(r) for r in rows)
-            rows = [r + [""] * (ncol - len(r)) for r in rows]
+            # 跨列合并（{span=N} 前缀）占 N 列：ncol 按展开列数计，不再补齐空单元格
+            def span_of(c):
+                m = re.match(r"^\{span=(\d+)\}", c)
+                return int(m.group(1)) if m else 1
+
+            ncol = max(sum(span_of(c) for c in r) for r in rows)
             out.append("| " + " | ".join(_cell(c) for c in rows[0]) + " |")
             out.append("| " + " | ".join("---" for _ in range(ncol)) + " |")
             for r in rows[1:]:

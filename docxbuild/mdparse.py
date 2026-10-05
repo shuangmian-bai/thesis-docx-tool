@@ -56,15 +56,19 @@ def parse_md(text):
             i += 1
             continue
 
-        # 代码块
+        # 代码块（围栏可带字号属性：```{sz=24}）
         if s.startswith("```"):
+            m = re.match(r"^```\{sz=(\d+)\}$", s)
             i += 1
             buf = []
             while i < len(lines) and not lines[i].strip().startswith("```"):
                 buf.append(lines[i])
                 i += 1
             i += 1
-            blocks.append(("code", buf))
+            if m:
+                blocks.append(("code", buf, m.group(1)))
+            else:
+                blocks.append(("code", buf))
             continue
 
         # 各级标题

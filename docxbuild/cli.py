@@ -198,7 +198,8 @@ def build(template=None, chap_dir=None, output_dir=None, toc_pages=None,
                 body_xml.append(ref_xml(blk[1]))
                 n_ref += 1
             elif kind == "code":
-                body_xml.append(code_xml(blk[1]))
+                sz = blk[2] if len(blk) > 2 else None
+                body_xml.append(code_xml(blk[1], sz=sz))
                 n_code += 1
             elif kind == "table":
                 body_xml.append(table_xml(blk[1]))

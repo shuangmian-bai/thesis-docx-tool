@@ -125,25 +125,51 @@ def _outline_level(p):
 
 
 def _para_text(p, preserve_ws=False):
-    """提取段落纯文本：处理 <w:t> / <w:tab> / <w:br>。
+    """提取段落文本，保留行内加粗为 Markdown `**…**`，段落级格式为 `{k=v}` 前缀。
 
-    <w:br> 是段落内软换行，Markdown 无对应概念，转成空格以保持段落边界不被
-    拆散（否则 mdparse 会把含 \\n 的段落按行切开，破坏闭环一致性）。
-    preserve_ws=True 时不合并空格（代码块需保留缩进）。
+    按 run 遍历：加粗 run（`<w:b/>`，非 `val="0"`）的文本用 `**…**` 包裹，
+    交给 mdparse.parse_inline / fragments.runs_xml 还原为 `<w:b/>`。段落级
+    格式（pPr 的 jc / ind firstLine）以 `{jc=center,ind=482}` 前缀附加，
+    交给 fragments 还原为 `<w:jc/>` / `<w:ind/>`，使拆解→重建对段落格式无损。
+    `<w:br>` 是段落内软换行，Markdown 无对应概念，转成空格以保持段落边界
+    不被拆散。preserve_ws=True（代码块/参考文献）时既不保留加粗与格式、
+    也不合并空格。
     """
+    fmt = []
+    ppr = p.find(f"{W}pPr")
+    if ppr is not None and not preserve_ws:
+        jc = ppr.find(f"{W}jc")
+        if jc is not None and jc.get(f"{W}val"):
+            fmt.append(f"jc={jc.get(f'{W}val')}")
+        ind = ppr.find(f"{W}ind")
+        if ind is not None and ind.get(f"{W}firstLine"):
+            fmt.append(f"ind={ind.get(f'{W}firstLine')}")
     parts = []
-    for node in p.iter():
-        tag = node.tag
-        if tag == f"{W}t":
-            parts.append(node.text or "")
-        elif tag == f"{W}tab":
-            parts.append("\t")
-        elif tag == f"{W}br":
-            parts.append(" ")
+    for run in p.iter(f"{W}r"):
+        rpr = run.find(f"{W}rPr")
+        b_el = rpr.find(f"{W}b") if rpr is not None else None
+        bold = b_el is not None and b_el.get(f"{W}val") != "0"
+        run_text = []
+        for node in run.iter():
+            tag = node.tag
+            if tag == f"{W}t":
+                run_text.append(node.text or "")
+            elif tag == f"{W}tab":
+                run_text.append("\t")
+            elif tag == f"{W}br":
+                run_text.append(" ")
+        t = "".join(run_text)
+        if bold and not preserve_ws and t.strip():
+            parts.append(f"**{t}**")
+        else:
+            parts.append(t)
     text = "".join(parts)
     if not preserve_ws:
         text = re.sub(r"[ \t]+", " ", text)
-    return text.strip()
+    text = text.strip()
+    if fmt and text:
+        return "{" + ",".join(fmt) + "}" + text
+    return text
 
 
 def _para_image(p, rels):
@@ -169,8 +195,24 @@ def _para_image(p, rels):
     return None
 
 
+def _para_sz(p):
+    """提取段落首 run 的手动字号（<w:sz>），无则返回 None。"""
+    run = p.find(f"{W}r")
+    if run is None:
+        return None
+    rpr = run.find(f"{W}rPr")
+    if rpr is None:
+        return None
+    sz = rpr.find(f"{W}sz")
+    return sz.get(f"{W}val") if sz is not None else None
+
+
 def _table_rows(tbl):
-    """把 <w:tbl> 解析为二维单元格列表；单元格内多段用换行连接。"""
+    """把 <w:tbl> 解析为二维单元格列表；单元格内多段用换行连接。
+
+    跨列合并（gridSpan）以 `{span=N}` 前缀保留，合成时还原为
+    `<w:gridSpan w:val="N"/>`，使拆解→重建对表格结构无损。
+    """
     rows = []
     for tr in tbl.findall(f"{W}tr"):
         cells = []
@@ -180,7 +222,13 @@ def _table_rows(tbl):
                 t = _para_text(p)
                 if t:
                     paras.append(t)
-            cells.append("\n".join(paras))
+            cell = "\n".join(paras)
+            tcpr = tc.find(f"{W}tcPr")
+            if tcpr is not None:
+                gs = tcpr.find(f"{W}gridSpan")
+                if gs is not None and gs.get(f"{W}val") and cell:
+                    cell = "{span=" + gs.get(f"{W}val") + "}" + cell
+            cells.append(cell)
         rows.append(cells)
     return rows
 
@@ -190,6 +238,12 @@ def _table_rows(tbl):
 _CAPTION_RE = re.compile(r"^\s*(?:\[)?(图|表)\s*[\d\-–—.]+\s+")
 # 参考文献条目：[1] …
 _REF_RE = re.compile(r"^\s*\[\d+\]\s")
+
+
+def _strip_fmt(text):
+    """剥离 `{k=v}` 格式前缀，返回纯文本（供块类型判断，前缀不参与匹配）。"""
+    m = re.match(r"^\{[^}]*\}", text)
+    return text[m.end():] if m else text
 
 
 def parse_docx(docx_path):
@@ -220,11 +274,17 @@ def parse_docx(docx_path):
     blocks = []
     images = {}          # zip 内路径 → 建议文件名
     code_buf = []
+    code_sz = None       # 代码块统一手动字号（<w:sz>），块尾附加
 
     def flush_code():
+        nonlocal code_sz
         if code_buf:
-            blocks.append(("code", list(code_buf)))
+            if code_sz:
+                blocks.append(("code", list(code_buf), code_sz))
+            else:
+                blocks.append(("code", list(code_buf)))
             code_buf.clear()
+            code_sz = None
 
     for child in body:
         if child.tag == f"{W}p":
@@ -247,6 +307,8 @@ def parse_docx(docx_path):
                 continue
 
             if sid in code_ids:
+                if not code_buf:
+                    code_sz = _para_sz(child)
                 code_buf.append(_para_text(child, preserve_ws=True))
                 continue
             flush_code()
@@ -263,9 +325,9 @@ def parse_docx(docx_path):
                 lvl = _outline_level(child)
             if lvl is not None:
                 blocks.append(("h", lvl, text))
-            elif sid in caption_ids or _CAPTION_RE.match(text):
+            elif sid in caption_ids or _CAPTION_RE.match(_strip_fmt(text)):
                 blocks.append(("caption", text))
-            elif _REF_RE.match(text):
+            elif _REF_RE.match(_strip_fmt(text)):
                 # 参考文献保留原始空格（[J] 前双空格等排版习惯）
                 blocks.append(("ref", _para_text(child, preserve_ws=True)))
             else:

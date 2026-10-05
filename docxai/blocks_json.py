@@ -42,7 +42,10 @@ def block_to_dict(block: Block) -> Dict[str, object]:
     if kind in TEXT_KINDS:
         return {"t": kind, "text": block[1]}
     if kind == "code":
-        return {"t": "code", "lines": list(block[1])}
+        d = {"t": "code", "lines": list(block[1])}
+        if len(block) > 2 and block[2]:
+            d["sz"] = block[2]
+        return d
     if kind == "table":
         return {"t": "table", "rows": [list(r) for r in block[1]]}
     if kind == "img":
@@ -67,6 +70,9 @@ def dict_to_block(d: Dict[str, object]) -> Block:
     if t in TEXT_KINDS:
         return (t, d["text"])
     if t == "code":
+        sz = d.get("sz")
+        if sz:
+            return ("code", list(d["lines"]), sz)
         return ("code", list(d["lines"]))
     if t == "table":
         return ("table", [list(r) for r in d["rows"]])
@@ -93,6 +99,9 @@ def validate_block(d: object) -> List[str]:
         lines = d.get("lines")
         if not isinstance(lines, list) or not all(isinstance(x, str) for x in lines):
             return ["code 的 lines 必须是字符串列表"]
+        sz = d.get("sz")
+        if sz is not None and not isinstance(sz, str):
+            return ["code 的 sz 必须是字符串"]
         return []
     if t == "table":
         rows = d.get("rows")

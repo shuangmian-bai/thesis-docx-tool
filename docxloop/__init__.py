@@ -1,16 +1,9 @@
-"""闭环测试引擎：convert → build → 全盘对比 → 可视化报告。
+"""闭环测试引擎：验证扁平化（word→块）与合成（块→word）对正文区完全对应。
 
-输入一组 docx（文件夹或单文件），逐个走拆解→构建闭环，对比原文档与输出文档的
-**全部内容与格式**（正文、封面、目录、承诺书、页眉页脚、样式、图片尺寸），
-生成 HTML 可视化报告供人验收。
-
-特殊元素（如承诺书签名图）由 `rules.py` 登记为「预期差异」，在报告里标注原因，
-**不是跳过检查**——所有元素都会被检查，只是差异被解释。
-
-用法（开发调试工具，非面向用户入口）：
-    python3 -m docxloop.cli 输入文件夹 [--template 模板.docx] [--output 报告.html]
-    python3 -m docxloop.cli 单个.docx
+word 扁平化 → 合成 → 严格对比：内容与格式完全对应才算通过，无标记、无跳过、
+无容差——任何差异都是扁平化器或渲染器的缺陷，修复缺陷而非掩盖。
 """
 import os
 
+#: 工具根目录（thesis-docx-tool/）
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
