@@ -6,6 +6,7 @@
 - 每个差异显示：区域、位置、原值、输出值、预期原因
 """
 import html
+import os
 from typing import List
 
 from docxloop.compare import CompareResult
@@ -104,6 +105,3 @@ def render(results: List[CompareResult], title: str = "闭环测试报告") -> s
 {''.join(cards)}
 </body>
 </html>"""
-
-
-import os  # noqa: E402  放在末尾避免与渲染逻辑混淆

@@ -66,7 +66,7 @@ class MainWindow(QMainWindow):
     def _build_menu(self):
         settings_act = QAction("AI 配置...", self)
         settings_act.triggered.connect(self._open_settings)
-        template_act = QAction("模板预览与修复...", self)
+        template_act = QAction("模板预览...", self)
         template_act.triggered.connect(lambda: self._open_template(""))
         menu = self.menuBar().addMenu("设置")
         menu.addAction(template_act)
@@ -74,9 +74,7 @@ class MainWindow(QMainWindow):
 
     def _open_template(self, path: str = ""):
         path = path or self.wizard.tpl_edit.text().strip() or DEFAULT_TEMPLATE
-        work_dir = self._cur.get("work_dir") if hasattr(self, "_cur") else None
-        dlg = TemplateDialog(os.path.abspath(path), HERE, work_dir, self)
-        dlg.template_changed.connect(self.wizard.tpl_edit.setText)
+        dlg = TemplateDialog(os.path.abspath(path), HERE, self)
         dlg.exec()
 
     def _refresh_status(self):
@@ -102,8 +100,8 @@ class MainWindow(QMainWindow):
                      "images_dir": images_dir, "md_target": md_target}
 
         self.statusBar().showMessage("正在解析 Word 并抽取图片...")
-        worker = ParseWorker(params["docx"], images_dir, work_dir,
-                             params["strip_front"])
+        # 固定剥离前置内容（封面、承诺书、目录），与命令行 run 行为一致
+        worker = ParseWorker(params["docx"], images_dir, work_dir, True)
         self._parse_worker = worker
         worker.finished_blocks.connect(self._on_parsed)
         worker.failed.connect(self._on_parse_failed)

@@ -1,32 +1,23 @@
 """模板骨架处理：只动该动的地方，其余原样保留。
 
 `template.docx` 的正文 XML 里，分节符段落之前是封面、诚信承诺书、目录域，
-之后是模板自带的示例正文。构建时**保留前者、替换后者**，因此这里要处理的是
+之后是模板自带的示例正文。构建时**保留前者、替换后者**——封面与承诺书
+（含签名）一律保留模板原样，不再由代码填充或替换。这里要处理的是
 「保留区」里少数按论文变化的部分：
 
-- 封面表格字段与承诺书题目（`fill_cover`）；
 - 目录域的缓存结果（`shrink_toc`）；
 - TOC 样式的强制大小写标签（`free_toc_case`）；
-- 文档属性与 `settings.xml` 的域更新开关（`fix_core_props` / `add_update_fields`）。
+- `settings.xml` 的域更新开关（`add_update_fields`）。
 
 另外还要保证拼接出来的 XML 合法、书写风格与模板一致（`check_prefixes` /
 `tidy_frag`），并登记命名空间前缀（`register_all`）。
 """
-import os
 import re
 import xml.etree.ElementTree as ET
 
 from docxbuild import W
-from docxbuild.docinfo import COVER, TEMPLATE_TITLE, TITLE
 from docxbuild.fragments import esc, para_xml, runs_xml
-from docxbuild.layout import CONTENT_W, SIGN_W
-
-WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
-A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
-REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
-
-#: 模板里诚信承诺书那张示例签名的部件名（`image2.png` 是模板自带的示例签名）
-TPL_SIGN_PART = "image2.png"
+from docxbuild.layout import CONTENT_W
 
 
 def declared_namespaces(raw):
@@ -84,100 +75,6 @@ def tidy_frag(frag, ns):
 
     frag = re.sub(r'\s+xmlns:([A-Za-z0-9]+)="([^"]*)"', repl, frag)
     return re.sub(r"<([^<>]*?)\s+/>", r"<\1/>", frag)
-
-
-def set_para_text(p, new_text):
-    """把段落的所有文字替换为 new_text（保留第一个 run 的格式）。"""
-    ts = p.findall(f".//{W}t")
-    if not ts:
-        return False
-    ts[0].text = new_text
-    ts[0].set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-    for t in ts[1:]:
-        t.text = ""
-    return True
-
-
-def para_text(p):
-    return "".join(t.text or "" for t in p.iter(f"{W}t"))
-
-
-def fill_cover(kids, log):
-    """填写封面表格与诚信承诺书中的字段。"""
-    tbl = None
-    for c in kids:
-        if c.tag == f"{W}tbl":
-            tbl = c
-            break
-    if tbl is None:
-        raise SystemExit("模板里没找到封面表格")
-
-    for row in tbl.findall(f"{W}tr"):
-        tcs = row.findall(f"{W}tc")
-        if len(tcs) < 2:
-            continue
-        label = para_text(tcs[0]).strip()
-        if label not in COVER:
-            continue
-        value = COVER[label]
-        # 值被拆成多个 run，先合并到第一个 run 再整体替换
-        for p in tcs[1].findall(f"{W}p"):
-            if any((t.text or "").strip() for t in p.iter(f"{W}t")):
-                set_para_text(p, value)
-                log.append(f"封面「{label}」→ {value}")
-                break
-
-    for p in kids:
-        if p.tag != f"{W}p":
-            continue
-        txt = para_text(p)
-        if TEMPLATE_TITLE in txt:
-            set_para_text(p, txt.replace(f"《{TEMPLATE_TITLE}》", f"《{TITLE}》"))
-            log.append("诚信承诺书题目已替换")
-            break
-
-
-def fit_signature(kids, rels_xml, path):
-    """把诚信承诺书里的示例签名换成论文作者的签名图，返回 (cx, cy)。
-
-    模板那张示例签名是模板自带的手写示例，作为浮动图形挂在「承诺人：」右侧
-    （`wp:anchor` + `behindDoc`）。尺寸写死在 XML 的 `wp:extent` 与 `a:ext` 上，
-    所以**只替换 `image2.png` 部件不够**——图换了尺寸不跟着变，Word 会按旧比例拉伸。
-
-    签名图是四字横排（宽高比约 3.45），比模板示例图（1.94）宽得多，高度必须
-    按新比例重算，否则宽度会冲出页面右缘（可用宽度约 3.6 cm，见 `layout.SIGN_W`）。
-
-    找不到签名图时**直接报错**而不是跳过：静默失败会让承诺书上留着模板作者的
-    签名图，这比构建中断糟得多。
-    """
-    from PIL import Image
-    with Image.open(path) as im:
-        px_w, px_h = im.size
-    cx = SIGN_W
-    cy = round(cx * px_h / px_w)
-
-    rid = None
-    for m in re.finditer(r'<Relationship Id="(rId\d+)"[^>]*Target="([^"]+)"', rels_xml):
-        if os.path.basename(m.group(2)) == TPL_SIGN_PART:
-            rid = m.group(1)
-            break
-    if rid is None:
-        raise SystemExit(f"模板的关系文件里找不到签名图 {TPL_SIGN_PART}")
-
-    for c in kids:
-        if c.tag != f"{W}p":
-            continue
-        for anchor in c.iter(f"{WP}anchor"):
-            if not any(b.get(f"{REL}embed") == rid for b in anchor.iter(f"{A}blip")):
-                continue
-            for e in anchor.iter(f"{WP}extent"):
-                e.set("cx", str(cx))
-                e.set("cy", str(cy))
-            for e in anchor.iter(f"{A}ext"):
-                e.set("cx", str(cx))
-                e.set("cy", str(cy))
-            return cx, cy
-    raise SystemExit("诚信承诺书里找不到签名图，无法替换")
 
 
 def list_numbering(numbering_xml):
@@ -294,17 +191,6 @@ def shrink_toc(kids, log, outline=(), pages=None):
                f"（原 {old} 条），其中 {filled} 条带页码；"
                f"在 Word 中按 F9 可重建为域结果")
     return kids[:begin + 1] + entries + kids[end:]
-
-
-def fix_core_props(xml, title, author):
-    """替换文档属性中的标题与作者（模板里留的是模板原作者的姓名）。"""
-    xml = re.sub(r"<dc:title>.*?</dc:title>",
-                 f"<dc:title>{esc(title)}</dc:title>", xml, flags=re.S)
-    xml = re.sub(r"<dc:creator>.*?</dc:creator>",
-                 f"<dc:creator>{esc(author)}</dc:creator>", xml, flags=re.S)
-    xml = re.sub(r"<cp:lastModifiedBy>.*?</cp:lastModifiedBy>",
-                 f"<cp:lastModifiedBy>{esc(author)}</cp:lastModifiedBy>", xml, flags=re.S)
-    return xml
 
 
 def add_update_fields(settings_xml):

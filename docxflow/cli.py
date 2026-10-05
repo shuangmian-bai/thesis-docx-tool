@@ -12,13 +12,14 @@
 
 内部自动串联以下阶段，用户不需要手工分步运行：
 
-    1. 前置检查：模板、签名图、章节源，缺件一次性报齐
-    2. 拆解（仅 Word 路线）：docx → 工作目录 src.md + 章节/*.md + images/
-    3. 架构图：config/figures/ 有 DSL 定义时自动渲染 PNG（无则跳过）
-    4. 构建：build 第一遍，生成占位目录的成品 docx
-    5. 页码回填：本机有 soffice 与 pdftotext 时自动 docx→PDF→量页码→第二遍构建；
+    1. 前置检查：模板、章节源，缺件一次性报齐
+    2. 工作目录产物清理：清空 output/、删 toc.json（防脏数据）
+    3. 拆解（仅 Word 路线）：docx → 工作目录 src.md + 章节/*.md + images/
+    4. 架构图：config/figures/ 有 DSL 定义时自动渲染 PNG（无则跳过）
+    5. 构建：build 第一遍，生成占位目录的成品 docx
+    6. 页码回填：本机有 soffice 与 pdftotext 时自动 docx→PDF→量页码→第二遍构建；
        缺任一则跳过（Word 中 Ctrl+A 后 F9 也可更新目录），不阻断出稿
-    6. 审计：对最终成品跑 audit，报告照打，审计结论不改变流水线成败
+    7. 审计：对最终成品跑 audit，报告照打，审计结论不改变流水线成败
 
 分步子命令（fig/build/toc/audit/convert）仍保留，供高级用户单步调试。
 """
@@ -34,14 +35,11 @@ from docxflow import HERE
 from docxflow.workdir import (WORK_ROOT, is_hash16, prepare_work_dir,
                               resolve_hash)
 from docxbuild.cli import CHAP_DIR, OUTPUT_DIR
-from docxbuild.docinfo import VERSION
 from docxfig.parser import list_figures
 
 # 编排层固定路径（与各原子模块中的定义同值；集中在此供前置检查使用）
 CONFIG_DIR = os.path.join(HERE, "config")
 FIG_DIR = os.path.join(CONFIG_DIR, "figures")
-CONFIG_IMAGES = os.path.join(CONFIG_DIR, "images")
-SIGNATURE = os.path.join(CONFIG_IMAGES, "signature.png")
 DEFAULT_TEMPLATE = os.path.join(CONFIG_DIR, "template.docx")
 
 # soffice 使用独立用户配置目录，避免与用户正在运行的 LibreOffice 抢 profile
@@ -57,20 +55,7 @@ def _step(title: str) -> None:
     print(f"\n{'=' * 30} {title} {'=' * 30}")
 
 
-# ── 应用层：章节源准备（清理 + 写入），命令行 / GUI / 闭环共用 ──
-
-def clear_old_chapters() -> None:
-    """清理 config/章节/ 下所有数字开头的 .md 文件，避免新旧章节混杂。
-
-    非数字开头的文件（如模板示例、整篇拆解产物）不动，由 build 自行跳过。
-    本函数是应用层唯一的 config 章节清理入口，出 bug 只修此处。
-    """
-    if not os.path.isdir(CHAP_DIR):
-        return
-    for fn in os.listdir(CHAP_DIR):
-        if fn.endswith(".md") and fn[:1].isdigit():
-            os.remove(os.path.join(CHAP_DIR, fn))
-
+# ── 应用层：章节源写入，命令行 / GUI / 闭环共用 ──
 
 def _safe_filename(title: str) -> str:
     """章节标题转合法文件名：去掉路径分隔符等非法字符，空标题回退为「章节」。"""
@@ -82,7 +67,8 @@ def write_chapters_from_blocks(blocks, chap_dir: Optional[str] = None) -> List[s
     """把块序列按 H1 拆成多章，写入章节目录（先清理旧分章）。
 
     chap_dir 为 None 时写入 config/章节/（MD 路线）；
-    传入时写入指定目录（Word 路线/GUI/闭环的哈希工作目录），避免多论文污染。
+    传入时写入指定目录（Word 路线/GUI/闭环的哈希工作目录），避免多论文污染，
+    同时把整篇渲染写到上级 src.md，保证 CLI/GUI 工作目录产物一致。
     这是**全项目唯一的章节落盘实现**：GUI 审阅页、命令行 Word 路线、闭环
     测试统一走这里，保证各入口行为完全等价。
     返回写入的文件名列表。
@@ -106,11 +92,28 @@ def write_chapters_from_blocks(blocks, chap_dir: Optional[str] = None) -> List[s
         with open(os.path.join(target, fn), "w", encoding="utf-8") as fh:
             fh.write(render(ch_blocks))
         written.append(fn)
+    if chap_dir:
+        with open(os.path.join(os.path.dirname(chap_dir), "src.md"),
+                  "w", encoding="utf-8") as fh:
+            fh.write(render(blocks))
     return written
 
 
-def _precheck(template: str, have_docx: bool, md_target: Optional[str],
-              force: bool, work_dir: Optional[str] = None) -> None:
+def _clean_work_dir_products(work_dir: str) -> None:
+    """清空哈希工作目录的构建产物（output/、toc.json），防脏数据污染。
+
+    应用层唯一清理入口；检查通过后才调用，避免检查失败误删上一轮可用成品。
+    """
+    out_dir = os.path.join(work_dir, "output")
+    if os.path.isdir(out_dir):
+        shutil.rmtree(out_dir)
+    toc = os.path.join(work_dir, "toc.json")
+    if os.path.exists(toc):
+        os.remove(toc)
+
+
+def _precheck(template: str, have_docx: bool,
+              work_dir: Optional[str] = None) -> None:
     """开工前一次性列出所有缺失件，避免跑到半途才报错。
 
     章节源检查看的是**实际生效的章节目录**：
@@ -120,8 +123,6 @@ def _precheck(template: str, have_docx: bool, md_target: Optional[str],
     if not os.path.exists(template):
         problems.append(f"模板不存在：{os.path.relpath(template, HERE)}"
                         f"（放 config/template.docx 或用 --template 指定）")
-    if not os.path.exists(SIGNATURE):
-        problems.append("承诺书签名图不存在：config/images/signature.png（请自备）")
     if not have_docx:
         chap_dir = os.path.join(work_dir, "章节") if work_dir else CHAP_DIR
         if not os.path.isdir(chap_dir) or not [
@@ -129,15 +130,9 @@ def _precheck(template: str, have_docx: bool, md_target: Optional[str],
             problems.append(f"找不到章节 Markdown：{os.path.relpath(chap_dir, HERE)}/"
                             " 下没有 .md 文件"
                             "（直接写 MD，或用 `run 用户论文.docx` 传入 Word）")
-    elif md_target and os.path.exists(md_target) and not force:
-        problems.append(f"拆解目标已存在：{os.path.relpath(md_target, HERE)}"
-                        f"（确认覆盖请加 --force）")
     if problems:
         msg = "\n  ".join(problems)
         raise SystemExit(f"开工前检查未通过：\n  {msg}")
-
-    # 封面字段：Word 路线从 docx 自动提取存工作目录；GUI 路线在模板预览页填写；
-    # MD 路线使用占位符，均可正常出稿（不再依赖全局 config/cover.json）
 
 
 def _fig_stage(no_fig: bool) -> bool:
@@ -162,7 +157,7 @@ def _build(template: str, work_dir: Optional[str] = None) -> str:
 
     work_dir 为 None 时走旧的全局目录（MD 路线）；
     传入时用哈希工作目录（Word 路线），chap_dir/output_dir/toc_pages/images_base
-    都指向工作目录，cover_path 指向工作目录的 cover.json，避免多论文共享造成污染。
+    都指向工作目录，避免多论文共享造成污染；封面保留模板原样，不做填充。
     """
     from docxbuild.cli import build as build_fn
     if work_dir:
@@ -172,7 +167,6 @@ def _build(template: str, work_dir: Optional[str] = None) -> str:
             output_dir=os.path.join(work_dir, "output"),
             toc_pages=os.path.join(work_dir, "toc.json"),
             images_base=work_dir,
-            cover_path=os.path.join(work_dir, "cover.json"),
         )
     else:
         out = build_fn(template=template)
@@ -237,39 +231,23 @@ def _audit_stage(product: str, template: str, template_explicit: bool) -> None:
         print(f"[注意] 审计阶段异常，已跳过：{e}")
 
 
-def _convert_stage(docx: str, work_dir: str, keep_front: bool) -> None:
-    """拆解用户 docx：解析 → src.md + 封面 cover.json + 章节/*.md。
+def _convert_stage(docx: str, work_dir: str) -> None:
+    """拆解用户 docx：解析 → src.md + 章节/*.md（固定剥离前置封面/承诺书/目录）。
 
     与 GUI 审阅页共用同一份块处理链路（prepare_blocks →
     write_chapters_from_blocks），保证命令行与 GUI 的拆解产物完全一致。
+    封面与承诺书由模板骨架提供，不再提取、不写 cover.json。
     """
-    from docxbuild.docinfo import save_cover_to
-    from docxconvert.cli import (extract_cover, extract_template_title,
-                                 prepare_blocks)
-    from docxconvert.markdown import render
+    from docxconvert.cli import prepare_blocks
 
     # rel_base 传 work_dir：图片引用写成 images/x.png，
     # build 时 images_base=work_dir，与工作目录结构匹配
     images_dir = os.path.join(work_dir, "images")
     blocks, _, _ = prepare_blocks(docx, images_dir,
-                                  strip_front=not keep_front,
+                                  strip_front=True,
                                   rel_base=work_dir)
-    with open(os.path.join(work_dir, "src.md"), "w", encoding="utf-8") as f:
-        f.write(render(blocks))
-
-    # 提取封面字段并存到工作目录的 cover.json（每个论文独立，不污染全局）
-    cover = extract_cover(docx)
-    tpl_title = extract_template_title(docx)
-    save_cover_to(os.path.join(work_dir, "cover.json"), {
-        "title": cover.get("成果名称", ""),
-        "version": VERSION,
-        "template_title": tpl_title,
-        "cover": cover,
-    })
-    print(f"  已提取封面字段 {len(cover)} 项 → cover.json"
-          f"（承诺书题目：{tpl_title or '未识别'}）")
-
-    # 按 H1 拆分写入工作目录的 章节/（先清理旧分章，与 GUI 同一实现）
+    # 按 H1 拆分写入工作目录的 章节/，同时把整篇渲染落到 src.md
+    # （src.md 由 write_chapters_from_blocks 内部一并落盘，保证 CLI/GUI 产物一致）
     written = write_chapters_from_blocks(
         blocks, chap_dir=os.path.join(work_dir, "章节"))
     print(f"  已写入 {len(written)} 个章节 → "
@@ -279,8 +257,6 @@ def _convert_stage(docx: str, work_dir: str, keep_front: bool) -> None:
 def run_pipeline(docx: Optional[str] = None,
                  work_dir: Optional[str] = None,
                  template: Optional[str] = None,
-                 force: bool = False,
-                 keep_front: bool = False,
                  no_fig: bool = False,
                  no_toc: bool = False,
                  no_audit: bool = False,
@@ -309,15 +285,17 @@ def run_pipeline(docx: Optional[str] = None,
     elif work_dir:
         print(f"工作目录（指定）：{os.path.relpath(work_dir, HERE)}")
 
-    md_target = os.path.join(work_dir, "src.md") if (docx and work_dir) else None
-
     _step("阶段 · 开工前检查")
-    _precheck(template, bool(docx), md_target, force, work_dir)
+    _precheck(template, bool(docx), work_dir)
     print("检查通过。")
+
+    # 检查通过后统一清理工作目录旧产物（output/、toc.json），防脏数据污染
+    if work_dir:
+        _clean_work_dir_products(work_dir)
 
     if docx:
         _step("阶段 · 拆解用户 Word 为章节 Markdown")
-        _convert_stage(docx, work_dir, keep_front)
+        _convert_stage(docx, work_dir)
 
     _step("阶段 · 架构图渲染")
     _fig_stage(no_fig)
@@ -344,27 +322,24 @@ def run_pipeline(docx: Optional[str] = None,
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    """命令行入口：只做参数解析与哈希/路径判定，流程一律交 run_pipeline。"""
+    """命令行入口：只做参数解析与哈希/路径判定，流程一律交 run_pipeline。
+
+    面向用户只暴露三种用法：`run`（MD 路线）、`run 论文.docx`（Word 路线）、
+    `run <16位哈希>`（复用工作目录）。其余开关供 GUI/loop 程序内调用，
+    对用户隐藏（argparse.SUPPRESS）。
+    """
     ap = argparse.ArgumentParser(
         description="一键流水线：从 config/章节/*.md（或传入的用户 docx）"
                     "端到端生成成品 Word，内部自动完成架构图、构建、页码回填与审计。")
     ap.add_argument("docx", nargs="?", default=None,
                     help="用户已写好的论文 docx 路径，或 16 位哈希（复用已有"
-                         "工作目录，等价 --work-dir）；不传则使用 config/章节/")
-    ap.add_argument("--template", default=None,
-                    help="外部模板 docx 路径（默认 config/template.docx）；"
-                         "指定后构建与审计都使用该模板")
-    ap.add_argument("--force", action="store_true",
-                    help="Word 路线下允许覆盖工作目录中已存在的拆解产物")
-    ap.add_argument("--keep-front", action="store_true",
-                    help="Word 路线下保留 docx 原有前置页（默认剥离封面/承诺书/目录，"
-                         "因模板自带这些部分）")
-    ap.add_argument("--no-fig", action="store_true", help="跳过架构图渲染")
-    ap.add_argument("--no-toc", action="store_true", help="跳过目录页码自动回填（不转 PDF）")
-    ap.add_argument("--no-audit", action="store_true", help="跳过成品格式审计")
-    ap.add_argument("--work-dir", default=None,
-                    help="指定哈希工作目录（GUI 审阅后构建用，跳过拆解，"
-                         "直接从该目录的 章节/ 构建）")
+                         "工作目录）；不传则使用 config/章节/")
+    hidden = dict(help=argparse.SUPPRESS)
+    ap.add_argument("--template", default=None, **hidden)
+    ap.add_argument("--no-fig", action="store_true", **hidden)
+    ap.add_argument("--no-toc", action="store_true", **hidden)
+    ap.add_argument("--no-audit", action="store_true", **hidden)
+    ap.add_argument("--work-dir", default=None, **hidden)
     args = ap.parse_args(argv)
 
     # 位置参数两种形态（全局规范）：文件路径 或 16 位哈希
@@ -383,8 +358,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "对应工作目录不存在，请先传入文件路径）")
 
     product = run_pipeline(docx=docx, work_dir=work_dir,
-                           template=args.template, force=args.force,
-                           keep_front=args.keep_front, no_fig=args.no_fig,
+                           template=args.template, no_fig=args.no_fig,
                            no_toc=args.no_toc, no_audit=args.no_audit)
     if docx:
         print(f"拆解产物在工作目录 {os.path.relpath(prepare_work_dir(docx), HERE)} 中，"

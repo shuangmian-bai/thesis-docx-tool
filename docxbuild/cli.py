@@ -27,16 +27,16 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 from docxbuild import HERE, W
-from docxbuild.docinfo import COVER, TITLE, VERSION
+from docxbuild.docinfo import VERSION
 from docxbuild.fragments import (
     caption_xml, code_xml, heading_xml, image_xml, list_item_xml, para_xml,
     ref_xml, table_xml,
 )
 from docxbuild.mdparse import parse_md
 from docxbuild.template import (
-    TPL_SIGN_PART, add_update_fields, check_prefixes, declared_namespaces,
-    document_namespaces, fill_cover, fit_signature, fix_core_props, free_toc_case,
-    list_numbering, make_list_num_xml, register_all, shrink_toc, tidy_frag,
+    add_update_fields, check_prefixes, declared_namespaces,
+    document_namespaces, free_toc_case, list_numbering, make_list_num_xml,
+    register_all, shrink_toc, tidy_frag,
 )
 
 CHAP_DIR = os.path.join(HERE, "config", "章节")
@@ -49,23 +49,16 @@ OUTPUT_DIR = os.path.join(HERE, "output")
 
 
 def build(template=None, chap_dir=None, output_dir=None, toc_pages=None,
-          images_base=None, cover_path=None):
+          images_base=None):
     """核心构建流程（不含命令行解析）。
 
     所有路径参数均可注入，便于批量/多线程场景下用哈希隔离的工作目录调用，
     避免多个任务共享 config/章节、config/images 造成污染。
 
-    cover_path：论文封面字段配置路径（哈希工作目录下的 cover.json）。
-    不传时使用 docinfo 占位符默认值（MD 路线 / 未提供封面信息的场景）。
+    封面与承诺书（含签名）保留模板骨架原样，不提取、不填充、不替换。
 
     参数为 None 时回退到全局默认值（兼容旧的命令行与单线程调用）。
     """
-    from docxbuild.docinfo import load_cover_from, reset_cover
-    # 每次构建前重置封面，避免上一个论文的封面残留污染本次构建
-    reset_cover()
-    if cover_path:
-        load_cover_from(cover_path)
-
     TEMPLATE = template or DEFAULT_TEMPLATE
     CHAP = chap_dir or CHAP_DIR
     OUT = output_dir or OUTPUT_DIR
@@ -138,12 +131,18 @@ def build(template=None, chap_dir=None, output_dir=None, toc_pages=None,
 
     keep = kids[:boundary + 1]
 
-    # ── 3. 填封面与承诺书、重建目录 ──
-    # 目录要用到标题清单，先扫一遍各章的 # / ## 标题
+    # ── 3. 重建目录（封面与承诺书保留模板原样，不填充）──
+    # 目录要用到标题清单，先扫一遍各章的 # / ## 标题；围栏内的 `#` 行不算标题
     outline = []
     for fn in chapters:
         with open(os.path.join(CHAP, fn), encoding="utf-8") as fh:
+            in_code = False
             for ln in fh:
+                if ln.strip().startswith("```"):
+                    in_code = not in_code
+                    continue
+                if in_code:
+                    continue
                 m = re.match(r"^(#{1,2})\s+(.*?)\s*$", ln)
                 if m:
                     outline.append((len(m.group(1)), m.group(2)))
@@ -155,22 +154,12 @@ def build(template=None, chap_dir=None, output_dir=None, toc_pages=None,
         print(f"已读取 {TOC}（{len(pages)} 条页码）")
 
     log = []
-    fill_cover(keep, log)
     keep = shrink_toc(keep, log, outline, pages) or keep
     for line in log:
         print(" ", line)
 
-    # ── 4. 换掉承诺书里的示例签名 ──
-    # 模板的示例签名是模板自带的，属保留区的一部分。关系文件给出它的 rId，
-    # 模板 XML 给出它的浮动尺寸，两处都要改（见 template.fit_signature）。
+    # ── 4. 承诺书签名：保留模板原样，不替换 ──
     rels_xml = zin.read("word/_rels/document.xml.rels").decode("utf-8")
-    sign_path = os.path.join(HERE, "config", "images", "signature.png")
-    if not os.path.exists(sign_path):
-        raise SystemExit(f"签名图不存在：{os.path.relpath(sign_path, HERE)}")
-    sign_cx, sign_cy = fit_signature(keep, rels_xml, sign_path)
-    sign_png = open(sign_path, "rb").read()
-    print(f"  承诺书签名已换为 config/images/signature.png"
-          f"（{sign_cx / 360000:.2f} × {sign_cy / 360000:.2f} cm）")
 
     # ── 5. 生成正文，并登记图片关系 ──
     used_ids = [int(m) for m in re.findall(r'Id="rId(\d+)"', rels_xml)]
@@ -336,9 +325,6 @@ def build(template=None, chap_dir=None, output_dir=None, toc_pages=None,
         "word/document.xml": new_doc.encode("utf-8"),
         "word/settings.xml": settings.encode("utf-8"),
         "word/_rels/document.xml.rels": rels_new.encode("utf-8"),
-        # 签名图占的是模板示例签名的部件名，直接按字节覆盖；它被承诺书引用，
-        # 故上面第 7 步的清理会把它计入 protected 而不会误删
-        f"word/media/{TPL_SIGN_PART}": sign_png,
         "word/styles.xml": free_toc_case(
             zin.read("word/styles.xml").decode("utf-8")).encode("utf-8"),
     }
@@ -347,10 +333,6 @@ def build(template=None, chap_dir=None, output_dir=None, toc_pages=None,
         replace["word/numbering.xml"] = numbering_xml.replace(
             "</w:numbering>", "".join(new_nums_xml) + "</w:numbering>",
             1).encode("utf-8")
-    if "docProps/core.xml" in zin.namelist():
-        core = zin.read("docProps/core.xml").decode("utf-8")
-        replace["docProps/core.xml"] = fix_core_props(
-            core, TITLE, COVER["学生姓名"]).encode("utf-8")
     content_types = zin.read("[Content_Types].xml").decode("utf-8")
     if "thumbnail" in drop or any("thumbnail" in d for d in drop):
         root_rels = zin.read("_rels/.rels").decode("utf-8")

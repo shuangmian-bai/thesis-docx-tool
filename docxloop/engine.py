@@ -56,12 +56,11 @@ def run_closed_loop(src_path: str, template_path: Optional[str] = None,
     if out_docx is None:
         # 走应用层唯一流水线（与 run 行为完全一致，仅模板与输出落点不同）；
         # no_audit：audit 是只读报告且对比已由本模块负责，跑两遍没有信息量；
-        # force：--no-reuse 明确要求重新拆解，允许覆盖已有产物；
         # copy_to_output：闭环产物留在工作目录即可，不占用全局 output/
         from docxflow.cli import run_pipeline
         out_docx = run_pipeline(
             docx=src_path, work_dir=wdir, template=template_path,
-            force=True, no_audit=True, copy_to_output=False)
+            no_audit=True, copy_to_output=False)
 
     return compare(src_path, out_docx)
 

@@ -36,9 +36,6 @@ class WizardPage(QWidget):
         row1.addWidget(self.docx_edit)
         row1.addWidget(btn_docx)
         v1.addLayout(row1)
-        self.strip_chk = QCheckBox("丢弃第一个数字编号一级标题之前的前置内容"
-                                   "（封面、诚信承诺书、目录等）")
-        v1.addWidget(self.strip_chk)
         root.addWidget(doc_box)
 
         # 2. 处理模式
@@ -75,7 +72,7 @@ class WizardPage(QWidget):
         btn_tpl.clicked.connect(self._pick_template)
         row3.addWidget(self.tpl_edit, 1)
         row3.addWidget(btn_tpl)
-        btn_tpl_check = QPushButton("模板预览与修复...")
+        btn_tpl_check = QPushButton("模板预览...")
         btn_tpl_check.clicked.connect(
             lambda: self.open_template.emit(self.tpl_edit.text().strip()))
         row3.addWidget(btn_tpl_check)
@@ -122,5 +119,4 @@ class WizardPage(QWidget):
             "mode": "ai" if self.rb_ai.isChecked() else "default",
             "template": os.path.abspath(self.tpl_edit.text().strip())
                         if self.tpl_edit.text().strip() else "",
-            "strip_front": self.strip_chk.isChecked(),
         })

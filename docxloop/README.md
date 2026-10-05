@@ -38,8 +38,7 @@ python3 main.py loop 论文.docx --template 模板.docx   # 指定模板
 |---|---|
 | `cli.py` | 参数解析、结果摘要、报告落盘 |
 | `engine.py` | 输入解析（`resolve_input`）、单文件/批量闭环编排（`run_closed_loop` / `run_batch`） |
-| `compare.py` | 全盘对比：正文/封面/目录/承诺书/页眉/页脚/样式，产出 Diff 列表 |
-| `rules.py` | 预期差异规则（已知且接受的偏离，如签名图替换） |
+| `compare.py` | 全盘对比：正文/封面/目录/承诺书/页眉/页脚/样式，产出 Diff 列表；预期差异规则（目录页码与制表位）内联在本文件 |
 | `report.py` | 自包含 HTML 报告（差异表格 + 原文/成品路径） |
 
 报告默认写 `.cache/loop_report.html`。

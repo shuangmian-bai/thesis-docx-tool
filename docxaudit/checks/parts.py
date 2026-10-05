@@ -5,9 +5,6 @@ import re
 from docxaudit.common import FAIL, OK, WARN, Finding
 
 # 封面用图：不随论文内容变化，模板与成品必须逐字节一致。
-# 承诺书的签名图（`image2.png`）**不在其列**——模板那张是示例签名，
-# 成品要换成论文作者本人的签字，图与尺寸都不同，故归入「内容随论文变化」一类
-# （见 `docxbuild/template.py` 的 `fit_signature()`）。
 FIXED_MEDIA = ("word/media/image1.png",)
 
 # 差异属于「内容随论文变化」而非「格式跑偏」的部件
